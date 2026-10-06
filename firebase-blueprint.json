@@ -1,0 +1,284 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Administrator user profile and RBAC permissions",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 64 },
+        "role": { "type": "string", "enum": ["ADMIN", "SUPER_ADMIN"] },
+        "mfaRequired": { "type": "boolean" },
+        "mfaEnrolled": { "type": "boolean" },
+        "mfaSecret": { "type": "string" },
+        "disabled": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role", "disabled"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "Quiz metadata and publishing status",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "coverImageUrl": { "type": "string", "maxLength": 500 },
+        "category": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["DRAFT", "PUBLISHED", "ARCHIVED"] },
+        "questionCount": { "type": "number" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "status", "createdBy"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Individual quiz question with scoring configuration and options",
+      "type": "object",
+      "properties": {
+        "questionType": { "type": "string", "enum": ["MULTIPLE_CHOICE", "TRUE_FALSE"] },
+        "questionText": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "explanation": { "type": "string", "maxLength": 500 },
+        "timeLimitSeconds": { "type": "number" },
+        "points": { "type": "number" },
+        "sortOrder": { "type": "number" },
+        "options": { "type": "string" },
+        "correctOptionId": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["questionType", "questionText", "timeLimitSeconds", "points", "sortOrder"]
+    },
+    "Game": {
+      "title": "Game",
+      "description": "Live multiplayer game session",
+      "type": "object",
+      "properties": {
+        "quizId": { "type": "string", "maxLength": 128 },
+        "quizTitle": { "type": "string", "maxLength": 120 },
+        "gamePin": { "type": "string", "pattern": "^[0-9]{6}$", "maxLength": 6 },
+        "status": { "type": "string", "enum": ["WAITING", "COUNTDOWN", "QUESTION_ACTIVE", "QUESTION_LOCKED", "ANSWER_RESULTS", "LEADERBOARD", "FINISHED"] },
+        "currentQuestionIndex": { "type": "number" },
+        "currentQuestionId": { "type": "string", "maxLength": 128 },
+        "totalQuestions": { "type": "number" },
+        "playerCount": { "type": "number" },
+        "questionStartedAt": { "type": "number" },
+        "questionEndsAt": { "type": "number" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "endedAt": { "type": "string" }
+      },
+      "required": ["quizId", "gamePin", "status", "createdBy"]
+    },
+    "GameQuestion": {
+      "title": "GameQuestion",
+      "description": "Immutable public snapshot of a question for active game participants (never exposes correct answer)",
+      "type": "object",
+      "properties": {
+        "questionType": { "type": "string", "enum": ["MULTIPLE_CHOICE", "TRUE_FALSE"] },
+        "questionText": { "type": "string", "maxLength": 300 },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "timeLimitSeconds": { "type": "number" },
+        "points": { "type": "number" },
+        "sortOrder": { "type": "number" },
+        "options": { "type": "string" }
+      },
+      "required": ["questionType", "questionText", "timeLimitSeconds", "points", "sortOrder"]
+    },
+    "GamePrivateQuestion": {
+      "title": "GamePrivateQuestion",
+      "description": "Authoritative backend data including correct option and explanation",
+      "type": "object",
+      "properties": {
+        "correctOptionId": { "type": "string", "maxLength": 64 },
+        "explanation": { "type": "string", "maxLength": 500 },
+        "points": { "type": "number" }
+      },
+      "required": ["correctOptionId"]
+    },
+    "Player": {
+      "title": "Player",
+      "description": "Participant in a live game session",
+      "type": "object",
+      "properties": {
+        "nickname": { "type": "string", "minLength": 1, "maxLength": 24, "pattern": "^[a-zA-Z0-9 _\\-]+$" },
+        "sessionToken": { "type": "string", "maxLength": 128 },
+        "score": { "type": "number" },
+        "streak": { "type": "number" },
+        "correctCount": { "type": "number" },
+        "rank": { "type": "number" },
+        "isConnected": { "type": "boolean" },
+        "joinedAt": { "type": "string" },
+        "lastActiveAt": { "type": "string" }
+      },
+      "required": ["nickname", "sessionToken", "score"]
+    },
+    "Answer": {
+      "title": "Answer",
+      "description": "Player answer submission",
+      "type": "object",
+      "properties": {
+        "playerId": { "type": "string", "maxLength": 128 },
+        "nickname": { "type": "string", "maxLength": 24 },
+        "questionId": { "type": "string", "maxLength": 128 },
+        "selectedOptionId": { "type": "string", "maxLength": 64 },
+        "isCorrect": { "type": "boolean" },
+        "pointsAwarded": { "type": "number" },
+        "responseTimeMs": { "type": "number" },
+        "submittedAt": { "type": "string" }
+      },
+      "required": ["playerId", "questionId", "selectedOptionId"]
+    },
+    "GameResult": {
+      "title": "GameResult",
+      "description": "Final score and summary report per player",
+      "type": "object",
+      "properties": {
+        "playerId": { "type": "string", "maxLength": 128 },
+        "nickname": { "type": "string", "maxLength": 24 },
+        "finalScore": { "type": "number" },
+        "rank": { "type": "number" },
+        "correctAnswers": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "accuracy": { "type": "number" },
+        "averageResponseTime": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["playerId", "nickname", "finalScore", "rank"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Security and administrative activity trail",
+      "type": "object",
+      "properties": {
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string", "maxLength": 64 },
+        "resourceType": { "type": "string", "maxLength": 64 },
+        "resourceId": { "type": "string", "maxLength": 128 },
+        "metadata": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["actorUid", "action", "resourceType", "createdAt"]
+    },
+    "WeeklyQuestionnaire": {
+      "title": "WeeklyQuestionnaire",
+      "description": "Weekly security awareness questionnaire campaign and editable email template",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "weekLabel": { "type": "string", "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "dueDate": { "type": "string", "maxLength": 64 },
+        "passingScorePercent": { "type": "number" },
+        "status": { "type": "string", "enum": ["ACTIVE", "CLOSED"] },
+        "questions": { "type": "string" },
+        "emailTemplate": { "type": "string" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "status", "createdBy"]
+    },
+    "WeeklyInvitation": {
+      "title": "WeeklyInvitation",
+      "description": "Recipient invitation for a weekly security awareness questionnaire",
+      "type": "object",
+      "properties": {
+        "questionnaireId": { "type": "string", "maxLength": 128 },
+        "recipientEmail": { "type": "string", "maxLength": 160 },
+        "recipientName": { "type": "string", "maxLength": 120 },
+        "department": { "type": "string", "maxLength": 120 },
+        "token": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["PENDING", "COMPLETED"] },
+        "sentAt": { "type": "string" },
+        "completedAt": { "type": "string" }
+      },
+      "required": ["questionnaireId", "recipientEmail", "token", "status"]
+    },
+    "WeeklySubmission": {
+      "title": "WeeklySubmission",
+      "description": "User submitted response to a weekly security awareness questionnaire",
+      "type": "object",
+      "properties": {
+        "questionnaireId": { "type": "string", "maxLength": 128 },
+        "questionnaireTitle": { "type": "string", "maxLength": 160 },
+        "weekLabel": { "type": "string", "maxLength": 80 },
+        "invitationId": { "type": "string", "maxLength": 128 },
+        "token": { "type": "string", "maxLength": 128 },
+        "recipientEmail": { "type": "string", "maxLength": 160 },
+        "recipientName": { "type": "string", "maxLength": 120 },
+        "department": { "type": "string", "maxLength": 120 },
+        "answers": { "type": "string" },
+        "score": { "type": "number" },
+        "maxScore": { "type": "number" },
+        "correctCount": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "accuracy": { "type": "number" },
+        "passed": { "type": "boolean" },
+        "submittedAt": { "type": "string" }
+      },
+      "required": ["questionnaireId", "recipientEmail", "recipientName", "score", "accuracy", "submittedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Administrator accounts and RBAC"
+    },
+    "/quizzes/{quizId}": {
+      "schema": { "$ref": "#/entities/Quiz" },
+      "description": "Quiz metadata"
+    },
+    "/quizzes/{quizId}/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/Question" },
+      "description": "Questions belonging to a quiz"
+    },
+    "/games/{gameId}": {
+      "schema": { "$ref": "#/entities/Game" },
+      "description": "Active and historical game sessions"
+    },
+    "/games/{gameId}/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/GameQuestion" },
+      "description": "Immutable public question snapshots for a game"
+    },
+    "/games/{gameId}/privateQuestions/{questionId}": {
+      "schema": { "$ref": "#/entities/GamePrivateQuestion" },
+      "description": "Authoritative answers (hidden from players)"
+    },
+    "/games/{gameId}/players/{playerId}": {
+      "schema": { "$ref": "#/entities/Player" },
+      "description": "Players in a game session"
+    },
+    "/games/{gameId}/answers/{answerId}": {
+      "schema": { "$ref": "#/entities/Answer" },
+      "description": "Submitted answers for a game"
+    },
+    "/games/{gameId}/results/{playerId}": {
+      "schema": { "$ref": "#/entities/GameResult" },
+      "description": "Persisted final results for players"
+    },
+    "/auditLogs/{auditLogId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Administrative audit trail"
+    },
+    "/weeklyQuestionnaires/{questionnaireId}": {
+      "schema": { "$ref": "#/entities/WeeklyQuestionnaire" },
+      "description": "Weekly security awareness questionnaires"
+    },
+    "/weeklyQuestionnaires/{questionnaireId}/invitations/{inviteId}": {
+      "schema": { "$ref": "#/entities/WeeklyInvitation" },
+      "description": "Recipient invitations for weekly questionnaires"
+    },
+    "/weeklyQuestionnaires/{questionnaireId}/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/WeeklySubmission" },
+      "description": "Logged user submissions for weekly questionnaires"
+    }
+  }
+}

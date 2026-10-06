@@ -1,0 +1,8 @@
+{
+  "name": "CyberArena",
+  "description": "Production-ready real-time multiplayer quiz platform with live games, player lobbies, synchronized scoring, and administrative quiz management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

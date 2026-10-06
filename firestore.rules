@@ -1,0 +1,258 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened global primitives
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email != null &&
+        (request.auth.token.email == 'webdev.cybernetics@gmail.com' ||
+         request.auth.token.email == 'Webdev.cybernetics@gmail.com');
+    }
+
+    function isRegisteredAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.disabled == false &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPER_ADMIN');
+    }
+
+    function isSuperAdmin() {
+      return isBootstrappedAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.disabled == false &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'SUPER_ADMIN'
+      );
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || isRegisteredAdmin();
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity validation blueprints
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'disabled']) &&
+             data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'mfaRequired', 'mfaEnrolled', 'mfaSecret', 'disabled', 'createdAt', 'updatedAt']) &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 128 &&
+             (data.role == 'ADMIN' || data.role == 'SUPER_ADMIN') &&
+             data.disabled is bool;
+    }
+
+    function isValidQuiz(data) {
+      return data.keys().hasAll(['title', 'status', 'createdBy']) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             (data.status == 'DRAFT' || data.status == 'PUBLISHED' || data.status == 'ARCHIVED') &&
+             data.createdBy is string && data.createdBy.size() <= 128;
+    }
+
+    function isValidQuestion(data) {
+      return data.keys().hasAll(['questionType', 'questionText', 'timeLimitSeconds', 'points', 'sortOrder']) &&
+             (data.questionType == 'MULTIPLE_CHOICE' || data.questionType == 'MULTIPLE_CHOICE_2' || data.questionType == 'TRUE_FALSE') &&
+             data.questionText is string && data.questionText.size() >= 1 && data.questionText.size() <= 300 &&
+             data.timeLimitSeconds is number && data.timeLimitSeconds >= 5 && data.timeLimitSeconds <= 120 &&
+             data.points is number && data.points >= 0 && data.points <= 2000 &&
+             data.sortOrder is number;
+    }
+
+    function isValidGame(data) {
+      return data.keys().hasAll(['quizId', 'gamePin', 'status', 'createdBy']) &&
+             data.quizId is string && data.quizId.size() <= 128 &&
+             data.gamePin is string && data.gamePin.size() == 6 &&
+             (data.status == 'WAITING' || data.status == 'COUNTDOWN' || data.status == 'QUESTION_ACTIVE' || data.status == 'QUESTION_LOCKED' || data.status == 'ANSWER_RESULTS' || data.status == 'LEADERBOARD' || data.status == 'FINISHED') &&
+             data.createdBy is string && data.createdBy.size() <= 128;
+    }
+
+    function isValidPlayer(data) {
+      return data.keys().hasAll(['nickname', 'sessionToken', 'score']) &&
+             data.keys().hasOnly(['nickname', 'sessionToken', 'score', 'streak', 'correctCount', 'rank', 'isConnected', 'joinedAt', 'lastActiveAt', 'avatarId', 'avatarUrl']) &&
+             data.nickname is string && data.nickname.size() >= 1 && data.nickname.size() <= 48 &&
+             data.sessionToken is string && data.sessionToken.size() <= 128 &&
+             data.score is number && data.score >= 0;
+    }
+
+    function isValidGameQuestion(data) {
+      return data.keys().hasAll(['questionType', 'questionText', 'timeLimitSeconds', 'points', 'sortOrder']) &&
+             data.keys().hasOnly(['questionType', 'questionText', 'imageUrl', 'timeLimitSeconds', 'points', 'sortOrder', 'options']) &&
+             data.questionText is string && data.questionText.size() <= 300;
+    }
+
+    function isValidAnswer(data) {
+      return data.keys().hasAll(['playerId', 'questionId', 'selectedOptionId']) &&
+             data.keys().hasOnly(['playerId', 'nickname', 'questionId', 'selectedOptionId', 'isCorrect', 'pointsAwarded', 'responseTimeMs', 'submittedAt']) &&
+             data.playerId is string && data.playerId.size() <= 128 &&
+             data.questionId is string && data.questionId.size() <= 128 &&
+             data.selectedOptionId is string && data.selectedOptionId.size() <= 64;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['actorUid', 'action', 'resourceType', 'createdAt']) &&
+             data.keys().hasOnly(['actorUid', 'actorEmail', 'action', 'resourceType', 'resourceId', 'metadata', 'createdAt']) &&
+             data.actorUid is string && data.actorUid.size() <= 128 &&
+             data.action is string && data.action.size() <= 64 &&
+             data.resourceType is string && data.resourceType.size() <= 64;
+    }
+
+    function isValidWeeklyQuestionnaire(data) {
+      return data.keys().hasAll(['title', 'status', 'createdBy']) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             (data.status == 'ACTIVE' || data.status == 'CLOSED') &&
+             data.createdBy is string && data.createdBy.size() <= 128;
+    }
+
+    function isValidWeeklyInvitation(data) {
+      return data.keys().hasAll(['questionnaireId', 'recipientEmail', 'token', 'status']) &&
+             data.questionnaireId is string && data.questionnaireId.size() <= 128 &&
+             data.recipientEmail is string && data.recipientEmail.size() >= 3 && data.recipientEmail.size() <= 160 &&
+             data.token is string && data.token.size() <= 128 &&
+             (data.status == 'PENDING' || data.status == 'COMPLETED');
+    }
+
+    function isValidWeeklySubmission(data) {
+      return data.keys().hasAll(['questionnaireId', 'recipientEmail', 'recipientName', 'score', 'accuracy', 'submittedAt']) &&
+             data.questionnaireId is string && data.questionnaireId.size() <= 128 &&
+             data.recipientEmail is string && data.recipientEmail.size() <= 160 &&
+             data.recipientName is string && data.recipientName.size() >= 1 && data.recipientName.size() <= 120 &&
+             data.score is number && data.score >= 0 &&
+             data.accuracy is number && data.accuracy >= 0 && data.accuracy <= 100 &&
+             data.submittedAt is string && data.submittedAt.size() <= 64;
+    }
+
+    // Match rules
+    match /users/{uid} {
+      allow get: if isValidId(uid) && isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create: if isValidId(uid) && isSignedIn() && isValidUser(incoming()) && (
+        isSuperAdmin() ||
+        (request.auth.uid == uid && (
+          incoming().role == 'ADMIN' ||
+          (incoming().role == 'SUPER_ADMIN' && isBootstrappedAdmin())
+        ))
+      );
+      allow update: if isValidId(uid) && isSignedIn() && isValidUser(incoming()) && (
+        isSuperAdmin() ||
+        (request.auth.uid == uid && incoming().role == existing().role && incoming().disabled == existing().disabled)
+      );
+      allow delete: if isValidId(uid) && isSuperAdmin() && request.auth.uid != uid;
+    }
+
+    match /quizzes/{quizId} {
+      allow get: if isValidId(quizId);
+      allow list: if true;
+      allow create: if isValidId(quizId) && isSignedIn() && isValidQuiz(incoming());
+      allow update: if isValidId(quizId) && isSignedIn();
+      allow delete: if isValidId(quizId) && (isAdmin() || (isSignedIn() && resource.data.createdBy == request.auth.uid));
+
+      match /questions/{questionId} {
+        allow get, list: if true;
+        allow create, update: if isValidId(questionId) && isSignedIn() && isValidQuestion(incoming());
+        allow delete: if isValidId(questionId) && isSignedIn();
+      }
+    }
+
+    match /games/{gameId} {
+      allow get: if isValidId(gameId);
+      allow list: if true;
+      allow create: if isValidId(gameId) && isValidGame(incoming());
+      allow update: if isValidId(gameId) && (isAdmin() || isSignedIn() || (incoming().diff(existing()).affectedKeys().hasOnly(['playerCount', 'lastActiveAt'])));
+      allow delete: if isValidId(gameId) && (isAdmin() || (isSignedIn() && resource.data.createdBy == request.auth.uid));
+
+      // Public game question snapshots (NEVER contains correct answers)
+      match /questions/{questionId} {
+        allow get, list: if true;
+        allow write: if isValidId(questionId);
+      }
+
+      // Private authoritative question data (Host operations & answer verification)
+      match /privateQuestions/{questionId} {
+        allow get: if isValidId(questionId);
+        allow list: if isAdmin() || isSignedIn();
+        allow write: if isValidId(questionId);
+      }
+
+      // Players in live game
+      match /players/{playerId} {
+        allow get: if isValidId(playerId);
+        allow list: if true;
+        allow create: if isValidId(playerId) && isValidPlayer(incoming());
+        allow update: if isValidId(playerId) && (isAdmin() || (isValidPlayer(incoming()) && incoming().sessionToken == existing().sessionToken));
+        allow delete: if isValidId(playerId) && isAdmin();
+      }
+
+      // Player submitted answers
+      match /answers/{answerId} {
+        allow get: if isValidId(answerId);
+        allow list: if true;
+        allow create: if isValidId(answerId) && isValidAnswer(incoming());
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
+
+      // Final results per player
+      match /results/{playerId} {
+        allow get: if isValidId(playerId);
+        allow list: if true;
+        allow create, update: if isValidId(playerId);
+        allow delete: if isValidId(playerId) && isAdmin();
+      }
+    }
+
+    match /auditLogs/{auditLogId} {
+      allow get: if isValidId(auditLogId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(auditLogId) && isAdmin() && isValidAuditLog(incoming()) && incoming().actorUid == request.auth.uid;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /weeklyQuestionnaires/{questionnaireId} {
+      allow get: if isValidId(questionnaireId);
+      allow list: if true;
+      allow create: if isValidId(questionnaireId) && (isAdmin() || isSignedIn()) && isValidWeeklyQuestionnaire(incoming());
+      allow update: if isValidId(questionnaireId) && (isAdmin() || isSignedIn());
+      allow delete: if isValidId(questionnaireId) && (isAdmin() || isSignedIn());
+
+      match /invitations/{inviteId} {
+        allow get, list: if true;
+        allow create: if isValidId(inviteId) && (isAdmin() || isSignedIn()) && isValidWeeklyInvitation(incoming());
+        allow update: if isValidId(inviteId) && (isAdmin() || isSignedIn() || (isValidWeeklyInvitation(incoming()) && incoming().token == existing().token));
+        allow delete: if isValidId(inviteId) && (isAdmin() || isSignedIn());
+      }
+
+      match /submissions/{submissionId} {
+        allow get, list: if true;
+        allow create: if isValidId(submissionId) && isValidWeeklySubmission(incoming());
+        allow update: if isValidId(submissionId) && (isAdmin() || isSignedIn());
+        allow delete: if isValidId(submissionId) && (isAdmin() || isSignedIn());
+      }
+    }
+
+    // Health check endpoint for connection verification
+    match /test/{docId} {
+      allow read: if true;
+    }
+  }
+}

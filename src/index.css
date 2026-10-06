@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  --color-arena-orange: #F05A28;
+  --color-arena-navy: #0D1F3C;
+  --color-arena-teal: #00A191;
+  --color-arena-gray: #E5E5E5;
+}
+
+:root {
+  --primary-orange: #F05A28;
+  --primary-navy: #0D1F3C;
+  --primary-teal: #00A191;
+  --secondary-gray: #E5E5E5;
+  color-scheme: dark;
+}
+
+html,
+body {
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+/* Safe area padding for notched mobile devices */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Hide scrollbars on horizontal mobile nav/tab bars while keeping smooth scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent iOS Safari auto-zoom on form inputs */
+@media screen and (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
