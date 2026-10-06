@@ -17,7 +17,7 @@ export const AdminUsersView: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isSuperAdmin = profile?.role === 'SUPER_ADMIN' || user?.email?.toLowerCase() === 'webdev.cybernetics@gmail.com';
+  const isSuperAdmin = profile?.role === 'SUPER_ADMIN';
 
   const fetchUsers = async () => {
     try {

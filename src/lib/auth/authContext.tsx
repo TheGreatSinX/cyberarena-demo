@@ -36,6 +36,40 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// One-way SHA-256 digests (never stores plaintext email addresses or domains in client bundle)
+const SUPER_ADMIN_HASHES = new Set([
+  '8a94cec157014de6fe8a6ca843f5ff4147d639c4371bff1b02ed52c18f3e1d32',
+  'da3d3d48bb03371b6661c2bb49a72b7ffe2c9e84d7bd91462db14af97defb689',
+]);
+
+const AUTHORIZED_DOMAIN_HASH = 'a0baa7a25a96de25455f2d5a6b76a28b7e92122289b5dd5f59cf7e1267aa2db0';
+
+async function sha256Hex(input: string): Promise<string> {
+  const encoded = new TextEncoder().encode(input.trim().toLowerCase());
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+export async function isSuperAdminIdentity(email?: string | null): Promise<boolean> {
+  if (!email) return false;
+  const emailHash = await sha256Hex(email);
+  return SUPER_ADMIN_HASHES.has(emailHash);
+}
+
+async function isAuthorizedAdminIdentity(email?: string | null): Promise<boolean> {
+  if (!email) return false;
+  const clean = email.trim().toLowerCase();
+  const emailHash = await sha256Hex(clean);
+  if (SUPER_ADMIN_HASHES.has(emailHash)) return true;
+  const atIndex = clean.lastIndexOf('@');
+  if (atIndex === -1) return false;
+  const domain = clean.slice(atIndex + 1);
+  const domainHash = await sha256Hex(domain);
+  return domainHash === AUTHORIZED_DOMAIN_HASH;
+}
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -75,16 +109,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const userDocRef = doc(db, 'users', fbUser.uid);
           let userSnap = await getDoc(userDocRef);
 
-          // Auto-bootstrap runtime Super Admin webdev.cybernetics@gmail.com if no profile exists
-          const isBootstrappedEmail = fbUser.email?.toLowerCase() === 'webdev.cybernetics@gmail.com';
+          const isSuperEmail = await isSuperAdminIdentity(fbUser.email);
+          const isAllowedEmail = await isAuthorizedAdminIdentity(fbUser.email);
 
           if (!userSnap.exists()) {
-            if (isBootstrappedEmail) {
+            if (isAllowedEmail) {
               const newProfile: UserProfile = {
                 uid: fbUser.uid,
                 email: fbUser.email || '',
-                displayName: fbUser.displayName || 'Administrator',
-                role: 'SUPER_ADMIN',
+                displayName: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'Administrator'),
+                role: isSuperEmail ? 'SUPER_ADMIN' : 'ADMIN',
                 mfaRequired: true,
                 mfaEnrolled: false,
                 disabled: false,
@@ -128,13 +162,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         } catch (err: any) {
           console.error('Error fetching admin user profile:', err);
-          const isBootstrappedEmail = fbUser.email?.toLowerCase() === 'webdev.cybernetics@gmail.com';
-          if (isBootstrappedEmail) {
+          const isSuperEmail = await isSuperAdminIdentity(fbUser.email);
+          const isAllowedEmail = await isAuthorizedAdminIdentity(fbUser.email);
+          if (isAllowedEmail) {
             const fallbackProfile: UserProfile = {
               uid: fbUser.uid,
               email: fbUser.email || '',
               displayName: fbUser.displayName || 'Administrator',
-              role: 'SUPER_ADMIN',
+              role: isSuperEmail ? 'SUPER_ADMIN' : 'ADMIN',
               mfaRequired: false,
               mfaEnrolled: true,
               disabled: false,
@@ -145,7 +180,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setIsMfaVerified(true);
             setMfaChallengePending(false);
           } else {
-            // For other users, log warning without throwing unhandled error during auth initialization
             console.warn('Could not load profile from Firestore:', err?.message || err);
           }
         }
@@ -163,7 +197,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loginWithEmailPassword = async (email: string, pass: string) => {
     const cleanEmail = email.trim();
-    const isBootstrappedEmail = cleanEmail.toLowerCase() === 'webdev.cybernetics@gmail.com';
+    const isAllowedEmail = await isAuthorizedAdminIdentity(cleanEmail);
 
     try {
       const cred = await signInWithEmailAndPassword(auth, cleanEmail, pass);
@@ -172,22 +206,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const code = err?.code || '';
       const msg = String(err?.message || '');
 
-      // If the bootstrapped Super Admin is signing in with email/password for the first time,
-      // automatically create their Email/Password credential if it doesn't exist yet
       if (
-        isBootstrappedEmail &&
+        isAllowedEmail &&
         pass.length >= 6 &&
         (code === 'auth/user-not-found' || code === 'auth/invalid-credential' || code === 'auth/invalid-login-credentials')
       ) {
         try {
           const created = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
-          await writeAuditEntry('SUPER_ADMIN_BOOTSTRAPPED', 'auth', created.user.uid, { email: cleanEmail });
+          await writeAuditEntry('ADMIN_BOOTSTRAPPED', 'auth', created.user.uid, { email: cleanEmail });
           return;
         } catch (createErr: any) {
-          // If email-already-in-use, the account exists in Firebase Auth (either with a different password or Google Sign-In only)
           if (createErr?.code === 'auth/email-already-in-use') {
             throw new Error(
-              'Incorrect password for webdev.cybernetics@gmail.com, or this account was originally signed in with Google. Click "Forgot password?" to set a password, or use "Sign In with Google".'
+              'Incorrect password for this administrator account. Click "Forgot password?" below to reset your password, or use "Sign In with Google".'
             );
           }
         }
@@ -201,7 +232,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (msg.includes(' API key ') || msg.includes('requests-from-referer') || code === 'auth/unauthorized-domain') {
         throw new Error(
-          `Domain ${window.location.hostname} is not authorized in Firebase. Add "${window.location.hostname}" to Firebase Console → Authentication → Settings → Authorized domains (and check GCP API Key HTTP referrers).`
+          `Domain ${window.location.hostname} is not authorized in Firebase. Add "${window.location.hostname}" to Firebase Console → Authentication → Settings → Authorized domains.`
         );
       }
 
@@ -212,7 +243,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         code === 'auth/user-not-found'
       ) {
         throw new Error(
-          'Invalid email or password. If you have not set a password yet, click "Forgot password?" below or use "Sign In with Google".'
+          'Invalid email or password. If you forgot your password, click "Forgot password?" below.'
         );
       }
 
@@ -223,9 +254,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const signInWithGoogleAdmin = async () => {
     const provider = new GoogleAuthProvider();
     const cred = await signInWithPopup(auth, provider);
-    const isBootstrappedEmail = cred.user.email?.toLowerCase() === 'webdev.cybernetics@gmail.com';
+    const isAllowedEmail = await isAuthorizedAdminIdentity(cred.user.email);
     const userSnap = await getDoc(doc(db, 'users', cred.user.uid));
-    if (!userSnap.exists() && !isBootstrappedEmail) {
+    if (!userSnap.exists() && !isAllowedEmail) {
       await signOut(auth);
       throw new Error('Access denied. Administrator accounts must be manually added by a Super Admin.');
     }

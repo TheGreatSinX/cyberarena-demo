@@ -20,7 +20,15 @@ service cloud.firestore {
       return isSignedIn() &&
         request.auth.token.email != null &&
         (request.auth.token.email == 'webdev.cybernetics@gmail.com' ||
-         request.auth.token.email == 'Webdev.cybernetics@gmail.com');
+         request.auth.token.email == 'Webdev.cybernetics@gmail.com' ||
+         request.auth.token.email == 'cyber.infobro@gmail.com' ||
+         request.auth.token.email == 'Cyber.infobro@gmail.com');
+    }
+
+    function isPreApprovedDomainAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email != null &&
+        request.auth.token.email.matches('.*@[iI][bB][sS]\\.[cC][oO][mM]\\.[pP][hH]$');
     }
 
     function isRegisteredAdmin() {
@@ -41,7 +49,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isBootstrappedAdmin() || isRegisteredAdmin();
+      return isBootstrappedAdmin() || isPreApprovedDomainAdmin() || isRegisteredAdmin();
     }
 
     function incoming() {
@@ -147,7 +155,8 @@ service cloud.firestore {
       allow list: if isSuperAdmin();
       allow create: if isValidId(uid) && isSignedIn() && isValidUser(incoming()) && (
         isSuperAdmin() ||
-        (request.auth.uid == uid && incoming().role == 'SUPER_ADMIN' && isBootstrappedAdmin())
+        (request.auth.uid == uid && incoming().role == 'SUPER_ADMIN' && isBootstrappedAdmin()) ||
+        (request.auth.uid == uid && incoming().role == 'ADMIN' && isPreApprovedDomainAdmin())
       );
       allow update: if isValidId(uid) && isSignedIn() && isValidUser(incoming()) && (
         isSuperAdmin() ||
