@@ -27,7 +27,6 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
     mfaChallengePending,
     isMfaVerified,
     loginWithEmailPassword,
-    registerAdmin,
     signInWithGoogleAdmin,
     generateTotpSetup,
     enrollMfa,
@@ -35,10 +34,9 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
     resetPassword,
   } = useAuth();
 
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
+  const [mode, setMode] = useState<'login' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -77,14 +75,7 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
     setLoading(true);
 
     try {
-      if (mode === 'login') {
-        await loginWithEmailPassword(email.trim(), password);
-      } else {
-        if (!displayName.trim()) {
-          throw new Error('Please enter a display name.');
-        }
-        await registerAdmin(email.trim(), password, displayName.trim());
-      }
+      await loginWithEmailPassword(email.trim(), password);
     } catch (err: any) {
       setError(err?.message || 'Authentication failed. Please check your credentials.');
     } finally {
@@ -304,41 +295,9 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
           </div>
           <h2 className="text-2xl font-black text-white">Administrator Portal</h2>
           <p className="text-xs text-slate-400 mt-1">
-            Access quiz authoring, live arena operations, and audit records.
+            Sign in with an authorized administrator account provisioned by a Super Admin.
           </p>
         </div>
-
-        {/* Tab switcher */}
-        {mode !== 'forgot' && (
-          <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-950 border border-slate-800 mb-6 text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('login');
-                setError(null);
-                setResetSuccess(null);
-              }}
-              className={`py-2 rounded-lg transition-colors cursor-pointer ${
-                mode === 'login' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Admin Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('register');
-                setError(null);
-                setResetSuccess(null);
-              }}
-              className={`py-2 rounded-lg transition-colors cursor-pointer ${
-                mode === 'register' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              New Admin
-            </button>
-          </div>
-        )}
 
         {error && (
           <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs mb-5">
@@ -403,22 +362,6 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
           </form>
         ) : (
           <form onSubmit={handleAuthSubmit} className="space-y-4">
-            {mode === 'register' && (
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Display Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Dr. QuizMaster"
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white placeholder-slate-500 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                />
-              </div>
-            )}
-
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
                 Email Address
@@ -441,19 +384,17 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
                   Password
                 </label>
-                {mode === 'login' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('forgot');
-                      setError(null);
-                      setResetSuccess(null);
-                    }}
-                    className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer"
-                  >
-                    Forgot password?
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('forgot');
+                    setError(null);
+                    setResetSuccess(null);
+                  }}
+                  className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer"
+                >
+                  Forgot password?
+                </button>
               </div>
               <div className="relative">
                 <KeyRound className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
@@ -477,7 +418,7 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <>
-                  <span>{mode === 'login' ? 'Continue to MFA' : 'Create & Enroll'}</span>
+                  <span>Continue to MFA</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -519,11 +460,11 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
           <span>Sign In with Google</span>
         </button>
 
-        {/* Bootstrapped Super Admin notice */}
-        <div className="mt-6 p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-slate-400 flex items-start gap-2">
+        {/* Notice that new administrators must be added by Super Admin */}
+        <div className="mt-6 p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-400 flex items-start gap-2">
           <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
           <span>
-            The project owner (<code className="text-indigo-300 font-mono">webdev.cybernetics@gmail.com</code>) is automatically recognized as <strong>SUPER_ADMIN</strong>.
+            Self-registration is disabled. New administrator accounts must be manually added by a <strong>Super Admin</strong> from the Administrator console.
           </span>
         </div>
       </div>

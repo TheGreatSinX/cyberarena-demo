@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { initializeApp, deleteApp } from 'firebase/app';
 import {
   User as FirebaseUser,
+  getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -9,11 +11,10 @@ import {
   signOut,
   sendPasswordResetEmail,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import * as OTPAuth from 'otpauth';
-import { auth, db } from '../firebase/config';
+import { app, auth, db } from '../firebase/config';
 import { UserProfile, Role } from '../../types';
-import { handleFirestoreError, OperationType } from '../firebase/errors';
 
 interface AuthContextType {
   user: FirebaseUser | null;
@@ -74,36 +75,55 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const userDocRef = doc(db, 'users', fbUser.uid);
           let userSnap = await getDoc(userDocRef);
 
-          // Auto-bootstrap runtime admin webdev.cybernetics@gmail.com if no profile exists
+          // Auto-bootstrap runtime Super Admin webdev.cybernetics@gmail.com if no profile exists
           const isBootstrappedEmail = fbUser.email?.toLowerCase() === 'webdev.cybernetics@gmail.com';
 
           if (!userSnap.exists()) {
-            const newProfile: UserProfile = {
-              uid: fbUser.uid,
-              email: fbUser.email || '',
-              displayName: fbUser.displayName || 'Administrator',
-              role: isBootstrappedEmail ? 'SUPER_ADMIN' : 'ADMIN',
-              mfaRequired: true,
-              mfaEnrolled: false,
-              disabled: false,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            };
-            await setDoc(userDocRef, newProfile);
-            setProfile(newProfile);
-            setCurrentMfaSecret(null);
-            setMfaChallengePending(true);
-            setIsMfaVerified(false);
-          } else {
-            const data = userSnap.data() as UserProfile;
-            setProfile(data);
-            setCurrentMfaSecret(data.mfaSecret || null);
-            if (data.mfaEnrolled && data.mfaSecret) {
+            if (isBootstrappedEmail) {
+              const newProfile: UserProfile = {
+                uid: fbUser.uid,
+                email: fbUser.email || '',
+                displayName: fbUser.displayName || 'Administrator',
+                role: 'SUPER_ADMIN',
+                mfaRequired: true,
+                mfaEnrolled: false,
+                disabled: false,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+              await setDoc(userDocRef, newProfile);
+              setProfile(newProfile);
+              setCurrentMfaSecret(null);
               setMfaChallengePending(true);
               setIsMfaVerified(false);
             } else {
-              setMfaChallengePending(true); // Must enroll first
+              // Unauthorized account: not added by Super Admin
+              await signOut(auth);
+              setUser(null);
+              setProfile(null);
+              setCurrentMfaSecret(null);
+              setMfaChallengePending(false);
               setIsMfaVerified(false);
+            }
+          } else {
+            const data = userSnap.data() as UserProfile;
+            if (data.disabled) {
+              await signOut(auth);
+              setUser(null);
+              setProfile(null);
+              setCurrentMfaSecret(null);
+              setMfaChallengePending(false);
+              setIsMfaVerified(false);
+            } else {
+              setProfile(data);
+              setCurrentMfaSecret(data.mfaSecret || null);
+              if (data.mfaEnrolled && data.mfaSecret) {
+                setMfaChallengePending(true);
+                setIsMfaVerified(false);
+              } else {
+                setMfaChallengePending(true); // Must enroll first
+                setIsMfaVerified(false);
+              }
             }
           }
         } catch (err: any) {
@@ -149,25 +169,45 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const signInWithGoogleAdmin = async () => {
     const provider = new GoogleAuthProvider();
     const cred = await signInWithPopup(auth, provider);
+    const isBootstrappedEmail = cred.user.email?.toLowerCase() === 'webdev.cybernetics@gmail.com';
+    const userSnap = await getDoc(doc(db, 'users', cred.user.uid));
+    if (!userSnap.exists() && !isBootstrappedEmail) {
+      await signOut(auth);
+      throw new Error('Access denied. Administrator accounts must be manually added by a Super Admin.');
+    }
+    if (userSnap.exists() && userSnap.data()?.disabled) {
+      await signOut(auth);
+      throw new Error('This administrator account has been disabled by a Super Admin.');
+    }
     await writeAuditEntry('LOGIN', 'auth', cred.user.uid, { email: cred.user.email, provider: 'google' });
   };
 
   const registerAdmin = async (email: string, pass: string, displayName: string, role: Role = 'ADMIN') => {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    const newProfile: UserProfile = {
-      uid: cred.user.uid,
-      email,
-      displayName,
-      role,
-      mfaRequired: true,
-      mfaEnrolled: false,
-      disabled: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    await setDoc(doc(db, 'users', cred.user.uid), newProfile);
-    setProfile(newProfile);
-    await writeAuditEntry('ADMIN_CREATED', 'users', cred.user.uid, { email, role });
+    // Use an isolated secondary Firebase App instance so the Super Admin stays signed in
+    const secondaryAppName = `admin_provision_${Date.now()}`;
+    const secondaryApp = initializeApp(app.options, secondaryAppName);
+    const secondaryAuth = getAuth(secondaryApp);
+
+    try {
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, email, pass);
+      const newProfile: UserProfile = {
+        uid: cred.user.uid,
+        email,
+        displayName,
+        role,
+        mfaRequired: true,
+        mfaEnrolled: false,
+        disabled: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      // Write user profile using the primary Super Admin Firestore session
+      await setDoc(doc(db, 'users', cred.user.uid), newProfile);
+      await signOut(secondaryAuth);
+      await writeAuditEntry('ADMIN_CREATED', 'users', cred.user.uid, { email, role });
+    } finally {
+      await deleteApp(secondaryApp).catch(() => {});
+    }
   };
 
   const generateTotpSetup = () => {

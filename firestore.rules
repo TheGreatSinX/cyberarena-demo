@@ -147,10 +147,7 @@ service cloud.firestore {
       allow list: if isSuperAdmin();
       allow create: if isValidId(uid) && isSignedIn() && isValidUser(incoming()) && (
         isSuperAdmin() ||
-        (request.auth.uid == uid && (
-          incoming().role == 'ADMIN' ||
-          (incoming().role == 'SUPER_ADMIN' && isBootstrappedAdmin())
-        ))
+        (request.auth.uid == uid && incoming().role == 'SUPER_ADMIN' && isBootstrappedAdmin())
       );
       allow update: if isValidId(uid) && isSignedIn() && isValidUser(incoming()) && (
         isSuperAdmin() ||
