@@ -21,6 +21,7 @@ import {
 } from '../../lib/game/gameEngine';
 import { SEED_QUESTIONS } from '../../lib/seed/seedData';
 import { processUploadedQuestionImage } from '../../lib/utils/imageUpload';
+import QRCode from 'qrcode';
 import {
   Plus,
   Play,
@@ -43,6 +44,10 @@ import {
   KeyRound,
   Calendar,
   RefreshCw,
+  QrCode,
+  Download,
+  Maximize2,
+  Link2,
 } from 'lucide-react';
 
 interface QuizManagerProps {
@@ -86,6 +91,104 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
   const [dueDateInput, setDueDateInput] = useState('');
   const [copiedPinId, setCopiedPinId] = useState<string | null>(null);
   const [pinSavedSuccess, setPinSavedSuccess] = useState(false);
+
+  // QR Code states for Selected Quiz, Create/Edit Quiz Modal, and Enlarged QR Modal
+  const [selectedPinQrUrl, setSelectedPinQrUrl] = useState<string>('');
+  const [modalPinQrUrl, setModalPinQrUrl] = useState<string>('');
+  const [qrPreviewModal, setQrPreviewModal] = useState<{
+    title: string;
+    gamePin: string;
+    dueDate?: string | null;
+    qrDataUrl: string;
+  } | null>(null);
+  const [copiedJoinLink, setCopiedJoinLink] = useState(false);
+
+  // Generate QR code for selected quiz panel whenever pinInput or selectedQuiz.gamePin changes
+  useEffect(() => {
+    const activePin = (pinInput || selectedQuiz?.gamePin || '').replace(/\D/g, '').slice(0, 6);
+    if (activePin.length !== 6) {
+      setSelectedPinQrUrl('');
+      return;
+    }
+    let mounted = true;
+    const joinLink = `${window.location.origin}/?pin=${activePin}`;
+    QRCode.toDataURL(joinLink, {
+      width: 360,
+      margin: 2,
+      color: { dark: '#0D1F3C', light: '#FFFFFF' },
+      errorCorrectionLevel: 'H',
+    })
+      .then((url) => {
+        if (mounted) setSelectedPinQrUrl(url);
+      })
+      .catch((err) => console.error('QR generation error:', err));
+    return () => {
+      mounted = false;
+    };
+  }, [pinInput, selectedQuiz?.gamePin]);
+
+  // Generate QR code for Create / Edit Quiz modal whenever quizForm.gamePin changes
+  useEffect(() => {
+    const activePin = (quizForm.gamePin || '').replace(/\D/g, '').slice(0, 6);
+    if (!isQuizModalOpen || activePin.length !== 6) {
+      setModalPinQrUrl('');
+      return;
+    }
+    let mounted = true;
+    const joinLink = `${window.location.origin}/?pin=${activePin}`;
+    QRCode.toDataURL(joinLink, {
+      width: 360,
+      margin: 2,
+      color: { dark: '#0D1F3C', light: '#FFFFFF' },
+      errorCorrectionLevel: 'H',
+    })
+      .then((url) => {
+        if (mounted) setModalPinQrUrl(url);
+      })
+      .catch((err) => console.error('Modal QR generation error:', err));
+    return () => {
+      mounted = false;
+    };
+  }, [quizForm.gamePin, isQuizModalOpen]);
+
+  const handleOpenQrPreview = async (title: string, rawPin: string, dueDate?: string | null) => {
+    const cleanPin = rawPin.replace(/\D/g, '').slice(0, 6);
+    if (cleanPin.length !== 6) return;
+    try {
+      const joinLink = `${window.location.origin}/?pin=${cleanPin}`;
+      const qrDataUrl = await QRCode.toDataURL(joinLink, {
+        width: 480,
+        margin: 2,
+        color: { dark: '#0D1F3C', light: '#FFFFFF' },
+        errorCorrectionLevel: 'H',
+      });
+      setQrPreviewModal({
+        title,
+        gamePin: cleanPin,
+        dueDate: dueDate || null,
+        qrDataUrl,
+      });
+    } catch (err) {
+      console.error('Failed to open QR preview:', err);
+    }
+  };
+
+  const handleDownloadQrImage = (qrDataUrl: string, gamePin: string) => {
+    if (!qrDataUrl) return;
+    const link = document.createElement('a');
+    link.href = qrDataUrl;
+    link.download = `cyberarena-pin-${gamePin}-qr.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleCopyJoinUrl = (gamePin: string) => {
+    const joinLink = `${window.location.origin}/?pin=${gamePin}`;
+    navigator.clipboard.writeText(joinLink);
+    setCopiedJoinLink(true);
+    setTimeout(() => setCopiedJoinLink(false), 2000);
+  };
 
   // In-App Confirmation Dialogs (Replaces blocked window.confirm)
   const [questionToDelete, setQuestionToDelete] = useState<Question | null>(null);
@@ -620,6 +723,21 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                         <span>Due: {quiz.dueDate}</span>
                       </span>
                     )}
+
+                    {quiz.gamePin && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenQrPreview(quiz.title, quiz.gamePin || '', quiz.dueDate);
+                        }}
+                        title="Show Participant Join QR Code"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-[#00A191]/40 text-[#00A191] text-[11px] font-bold transition-colors cursor-pointer"
+                      >
+                        <QrCode className="w-3 h-3" />
+                        <span>QR Code</span>
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between text-xs pt-3 border-t border-slate-800/80">
@@ -740,36 +858,53 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                       SELF-PACED PARTICIPANT ACCESS (ANSWER ANYTIME BEFORE DUE DATE)
                     </span>
                     <h4 className="text-sm font-black text-white">
-                      Participant Access PIN & Due Date
+                      Participant Access PIN, Due Date & QR Code
                     </h4>
                   </div>
-                  {selectedQuiz.gamePin && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(selectedQuiz.gamePin || pinInput);
-                        setCopiedPinId('selected_panel');
-                        setTimeout(() => setCopiedPinId(null), 2000);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/90 hover:bg-slate-900 border border-[#00A191]/50 text-[#00A191] text-xs font-mono font-bold cursor-pointer"
-                    >
-                      {copiedPinId === 'selected_panel' ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>PIN Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copy PIN: {selectedQuiz.gamePin}</span>
-                        </>
-                      )}
-                    </button>
+                  {(selectedQuiz.gamePin || pinInput.length === 6) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedQuiz.gamePin || pinInput);
+                          setCopiedPinId('selected_panel');
+                          setTimeout(() => setCopiedPinId(null), 2000);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/90 hover:bg-slate-900 border border-[#00A191]/50 text-[#00A191] text-xs font-mono font-bold cursor-pointer"
+                      >
+                        {copiedPinId === 'selected_panel' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>PIN Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy PIN: {selectedQuiz.gamePin || pinInput}</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleOpenQrPreview(
+                            selectedQuiz.title,
+                            pinInput || selectedQuiz.gamePin || '',
+                            dueDateInput || selectedQuiz.dueDate
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#00A191]/20 hover:bg-[#00A191]/30 border border-[#00A191]/50 text-white text-xs font-bold cursor-pointer transition-colors"
+                      >
+                        <QrCode className="w-3.5 h-3.5 text-[#00A191]" />
+                        <span>Enlarge QR</span>
+                      </button>
+                    </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                  <div className="sm:col-span-5">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 items-end">
+                  <div className="xl:col-span-4">
                     <label className="block text-[11px] font-bold uppercase text-slate-300 mb-1">
                       6-Digit Participant PIN
                     </label>
@@ -789,12 +924,12 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                         className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white border border-slate-700 cursor-pointer"
                       >
                         <RefreshCw className="w-3.5 h-3.5 text-[#F05A28]" />
-                        <span>Generate PIN</span>
+                        <span>Generate</span>
                       </button>
                     </div>
                   </div>
 
-                  <div className="sm:col-span-4">
+                  <div className="xl:col-span-3">
                     <label className="block text-[11px] font-bold uppercase text-slate-300 mb-1">
                       Due Date
                     </label>
@@ -806,7 +941,68 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                     />
                   </div>
 
-                  <div className="sm:col-span-3">
+                  {/* QR Code Beside Due Date */}
+                  <div className="xl:col-span-2 flex flex-col">
+                    <label className="block text-[11px] font-bold uppercase text-slate-300 mb-1">
+                      Join QR Code
+                    </label>
+                    {selectedPinQrUrl ? (
+                      <div className="flex items-center gap-2 p-1.5 rounded-xl bg-slate-950 border border-[#00A191]/40">
+                        <div
+                          onClick={() =>
+                            handleOpenQrPreview(
+                              selectedQuiz.title,
+                              pinInput || selectedQuiz.gamePin || '',
+                              dueDateInput || selectedQuiz.dueDate
+                            )
+                          }
+                          title="Click to enlarge QR Code"
+                          className="p-1 rounded-lg bg-white cursor-pointer hover:scale-105 transition-transform shrink-0"
+                        >
+                          <img
+                            src={selectedPinQrUrl}
+                            alt="Participant Join QR"
+                            className="w-9 h-9 object-contain"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleOpenQrPreview(
+                                selectedQuiz.title,
+                                pinInput || selectedQuiz.gamePin || '',
+                                dueDateInput || selectedQuiz.dueDate
+                              )
+                            }
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-[#00A191] hover:underline cursor-pointer"
+                          >
+                            <Maximize2 className="w-2.5 h-2.5" />
+                            <span>View</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDownloadQrImage(
+                                selectedPinQrUrl,
+                                (pinInput || selectedQuiz.gamePin || '').slice(0, 6)
+                              )
+                            }
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-300 hover:text-white cursor-pointer"
+                          >
+                            <Download className="w-2.5 h-2.5" />
+                            <span>PNG</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="h-[46px] px-2.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-center text-[10px] text-slate-500 text-center">
+                        Generate PIN for QR
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="xl:col-span-3">
                     <button
                       type="button"
                       disabled={actionLoading}
@@ -1000,8 +1196,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-1 items-end">
+                <div className="sm:col-span-5">
                   <label className="block text-xs font-bold uppercase text-slate-300 mb-1">
                     Participant 6-Digit PIN
                   </label>
@@ -1029,7 +1225,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                   </div>
                 </div>
 
-                <div>
+                <div className="sm:col-span-4">
                   <label className="block text-xs font-bold uppercase text-slate-300 mb-1">
                     Due Date
                   </label>
@@ -1039,6 +1235,62 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                     onChange={(e) => setQuizForm({ ...quizForm, dueDate: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono outline-none focus:border-[#00A191]"
                   />
+                </div>
+
+                {/* Live QR Code Beside Due Date in Create / Edit Quiz Modal */}
+                <div className="sm:col-span-3 flex flex-col">
+                  <label className="block text-xs font-bold uppercase text-slate-300 mb-1">
+                    Join QR
+                  </label>
+                  {modalPinQrUrl ? (
+                    <div className="flex items-center gap-2 p-1.5 rounded-xl bg-slate-950 border border-[#00A191]/40">
+                      <div
+                        onClick={() =>
+                          handleOpenQrPreview(
+                            quizForm.title || 'New Quiz',
+                            quizForm.gamePin,
+                            quizForm.dueDate
+                          )
+                        }
+                        title="Click to enlarge QR Code"
+                        className="p-1 rounded-lg bg-white cursor-pointer hover:scale-105 transition-transform shrink-0"
+                      >
+                        <img
+                          src={modalPinQrUrl}
+                          alt="New Quiz PIN QR"
+                          className="w-8 h-8 object-contain"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleOpenQrPreview(
+                              quizForm.title || 'New Quiz',
+                              quizForm.gamePin,
+                              quizForm.dueDate
+                            )
+                          }
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-[#00A191] hover:underline cursor-pointer"
+                        >
+                          <Maximize2 className="w-2.5 h-2.5" />
+                          <span>Zoom</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadQrImage(modalPinQrUrl, quizForm.gamePin)}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-300 hover:text-white cursor-pointer"
+                        >
+                          <Download className="w-2.5 h-2.5" />
+                          <span>PNG</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-[38px] px-2 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-center text-[10px] text-slate-500 text-center">
+                      6-digit PIN
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1141,6 +1393,99 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
           onSave={handleSaveQuestion}
           onClose={() => setEditingQuestion(null)}
         />
+      )}
+
+      {/* ENLARGED PARTICIPANT JOIN QR CODE MODAL */}
+      {qrPreviewModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setQrPreviewModal(null)}
+        >
+          <div
+            className="relative w-full max-w-md rounded-3xl bg-[#0D1F3C] border-2 border-[#00A191]/50 p-6 sm:p-8 shadow-2xl text-center space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setQrPreviewModal(null)}
+              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label="Close QR Preview"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#00A191]/20 border border-[#00A191]/40 text-[#00A191] text-xs font-bold uppercase">
+                <QrCode className="w-3.5 h-3.5" />
+                <span>Participant Self-Paced Join QR</span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-black text-white">{qrPreviewModal.title}</h3>
+              <p className="text-xs text-slate-300">
+                Participants can scan this QR code to open CYBER|ARENA with the 6-digit PIN pre-filled.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-3xl bg-white shadow-2xl mx-auto inline-block border-4 border-[#00A191]/50">
+              <img
+                src={qrPreviewModal.qrDataUrl}
+                alt={`QR Code for PIN ${qrPreviewModal.gamePin}`}
+                className="w-60 h-60 sm:w-64 sm:h-64 object-contain mx-auto"
+              />
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-around gap-4">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  PARTICIPANT PIN
+                </span>
+                <span className="text-2xl font-mono font-black tracking-widest text-[#00A191]">
+                  {qrPreviewModal.gamePin}
+                </span>
+              </div>
+              {qrPreviewModal.dueDate && (
+                <div className="border-l border-slate-800 pl-4">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                    DUE DATE
+                  </span>
+                  <span className="text-sm font-mono font-bold text-white">
+                    {qrPreviewModal.dueDate}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => handleCopyJoinUrl(qrPreviewModal.gamePin)}
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-colors cursor-pointer"
+              >
+                {copiedJoinLink ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span className="text-emerald-300">Link Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="w-4 h-4 text-[#00A191]" />
+                    <span>Copy Join Link</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleDownloadQrImage(qrPreviewModal.qrDataUrl, qrPreviewModal.gamePin)
+                }
+                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#00A191] hover:bg-[#00bda9] text-white text-xs font-bold transition-colors cursor-pointer shadow-lg shadow-[#00A191]/30"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download QR</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

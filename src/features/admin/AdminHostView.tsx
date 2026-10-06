@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { doc, collection, onSnapshot, query, orderBy, deleteDoc, updateDoc } from 'firebase/firestore';
+import QRCode from 'qrcode';
 import { db } from '../../lib/firebase/config';
 import { Game, GameQuestionSnapshot, Player, AnswerSubmission } from '../../types';
 import { advanceGameState } from '../../lib/game/gameEngine';
@@ -19,6 +20,11 @@ import {
   StopCircle,
   BarChart3,
   UserX,
+  QrCode,
+  Download,
+  Maximize2,
+  X,
+  Link2,
 } from 'lucide-react';
 
 interface AdminHostViewProps {
@@ -41,9 +47,43 @@ export const AdminHostView: React.FC<AdminHostViewProps> = ({ gameId, onFinishGa
   const [players, setPlayers] = useState<Player[]>([]);
   const [answers, setAnswers] = useState<AnswerSubmission[]>([]);
   const [copiedPin, setCopiedPin] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+  const [qrModalOpen, setQrModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<number>(20);
   const [countdownNum, setCountdownNum] = useState<number>(3);
+
+  const joinUrl = game?.gamePin ? `${window.location.origin}/?pin=${game.gamePin}` : '';
+
+  // Generate QR Code Data URL whenever gamePin changes
+  useEffect(() => {
+    if (!game?.gamePin) {
+      setQrCodeDataUrl('');
+      return;
+    }
+    let isMounted = true;
+    const targetUrl = `${window.location.origin}/?pin=${game.gamePin}`;
+    QRCode.toDataURL(targetUrl, {
+      width: 420,
+      margin: 2,
+      color: {
+        dark: '#0D1F3C',
+        light: '#FFFFFF',
+      },
+      errorCorrectionLevel: 'H',
+    })
+      .then((url) => {
+        if (isMounted) setQrCodeDataUrl(url);
+      })
+      .catch((err) => {
+        console.error('Failed to generate QR code:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [game?.gamePin]);
 
   // Countdown timer effect for host view
   useEffect(() => {
@@ -135,6 +175,23 @@ export const AdminHostView: React.FC<AdminHostViewProps> = ({ gameId, onFinishGa
     navigator.clipboard.writeText(game.gamePin);
     setCopiedPin(true);
     setTimeout(() => setCopiedPin(false), 2000);
+  };
+
+  const handleCopyJoinLink = () => {
+    if (!joinUrl) return;
+    navigator.clipboard.writeText(joinUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const handleDownloadQr = () => {
+    if (!qrCodeDataUrl || !game?.gamePin) return;
+    const link = document.createElement('a');
+    link.href = qrCodeDataUrl;
+    link.download = `cyberarena-pin-${game.gamePin}-qr.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleStartGame = async () => {
@@ -260,6 +317,15 @@ export const AdminHostView: React.FC<AdminHostViewProps> = ({ gameId, onFinishGa
               >
                 {copiedPin ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
               </button>
+              <button
+                onClick={() => setQrModalOpen(true)}
+                title="Show Join QR Code"
+                aria-label="Show Join QR Code"
+                className="min-h-[38px] flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 cursor-pointer transition-colors text-xs font-bold"
+              >
+                <QrCode className="w-4 h-4" />
+                <span className="hidden md:inline">QR Code</span>
+              </button>
             </div>
           </div>
 
@@ -299,51 +365,127 @@ export const AdminHostView: React.FC<AdminHostViewProps> = ({ gameId, onFinishGa
       {/* Main Host Area */}
       {game.status === 'WAITING' ? (
         /* LOBBY VIEW */
-        <div className="flex-1 flex flex-col justify-between max-w-4xl w-full mx-auto">
-          <div className="text-center py-4 sm:py-6">
+        <div className="flex-1 flex flex-col justify-between max-w-5xl w-full mx-auto">
+          <div className="text-center py-3 sm:py-5">
             <h2 className="text-2xl sm:text-3xl font-black mb-2">{game.quizTitle}</h2>
             <p className="text-slate-400 text-xs sm:text-sm">
-              Instruct players to navigate to CYBER|ARENA and enter PIN <strong className="text-white font-mono">{game.gamePin}</strong>
+              Scan the QR code below or enter PIN <strong className="text-white font-mono">{game.gamePin}</strong> on CYBER|ARENA to join immediately
             </p>
           </div>
 
-          {/* Connected Players Wall */}
-          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/60 border border-slate-800 my-auto min-h-[200px] sm:min-h-[220px]">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Connected Players ({players.length})
-              </span>
-              {players.length === 0 && (
-                <span className="text-xs text-amber-400 animate-pulse">Waiting for players to join...</span>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 my-auto items-stretch">
+            {/* QR Code Join Card */}
+            <div className="lg:col-span-5 p-5 sm:p-6 rounded-3xl bg-slate-900/90 border border-indigo-500/30 shadow-xl flex flex-col items-center justify-between text-center">
+              <div className="w-full flex items-center justify-between mb-3">
+                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-indigo-400">
+                  <QrCode className="w-4 h-4" />
+                  <span>Scan to Join</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQrModalOpen(true)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-bold transition-colors cursor-pointer"
+                  title="Enlarge QR Code for Projector"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  <span>Enlarge</span>
+                </button>
+              </div>
+
+              {qrCodeDataUrl ? (
+                <div
+                  onClick={() => setQrModalOpen(true)}
+                  className="p-3 rounded-2xl bg-white shadow-lg shadow-indigo-950/50 border-2 border-indigo-400/40 cursor-pointer hover:scale-[1.02] transition-transform"
+                  title="Click to enlarge QR Code"
+                >
+                  <img
+                    src={qrCodeDataUrl}
+                    alt={`Join Game PIN ${game.gamePin} QR Code`}
+                    className="w-44 h-44 sm:w-48 sm:h-48 object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="w-48 h-48 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center text-xs text-slate-500">
+                  Generating QR...
+                </div>
               )}
+
+              <div className="w-full mt-4 space-y-2">
+                <div className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 truncate">
+                  PIN: <strong className="text-white font-black tracking-widest">{game.gamePin}</strong>
+                </div>
+
+                <div className="flex items-center gap-2 w-full">
+                  <button
+                    type="button"
+                    onClick={handleCopyJoinLink}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    {copiedLink ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-300">Link Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Link2 className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Copy Join Link</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadQr}
+                    disabled={!qrCodeDataUrl}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                    title="Download QR Code PNG"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>PNG</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 sm:gap-2.5">
-              {players.map((p) => {
-                const av = getAvatarById(p.avatarId);
-                return (
-                  <div
-                    key={p.id}
-                    className="group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-slate-600 transition-all text-xs sm:text-sm font-bold text-white shadow-sm"
-                  >
-                    <img
-                      src={av.imageUrl}
-                      alt={p.nickname}
-                      className="w-6 h-6 rounded-full object-cover border shrink-0"
-                      style={{ borderColor: av.accentColor }}
-                    />
-                    <span className="truncate max-w-[140px] sm:max-w-none">{p.nickname}</span>
-                    <button
-                      onClick={() => handleKickPlayer(p.id)}
-                      title="Remove Player"
-                      aria-label={`Remove ${p.nickname}`}
-                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-slate-400 hover:text-rose-400 cursor-pointer ml-1 p-0.5"
+            {/* Connected Players Wall */}
+            <div className="lg:col-span-7 p-4 sm:p-6 rounded-3xl bg-slate-900/60 border border-slate-800 min-h-[240px] flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Connected Players ({players.length})
+                </span>
+                {players.length === 0 && (
+                  <span className="text-xs text-amber-400 animate-pulse">Waiting for players to scan or enter PIN...</span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2 sm:gap-2.5 content-start flex-1">
+                {players.map((p) => {
+                  const av = getAvatarById(p.avatarId);
+                  return (
+                    <div
+                      key={p.id}
+                      className="group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 hover:border-slate-600 transition-all text-xs sm:text-sm font-bold text-white shadow-sm"
                     >
-                      <UserX className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })}
+                      <img
+                        src={av.imageUrl}
+                        alt={p.nickname}
+                        className="w-6 h-6 rounded-full object-cover border shrink-0"
+                        style={{ borderColor: av.accentColor }}
+                      />
+                      <span className="truncate max-w-[140px] sm:max-w-none">{p.nickname}</span>
+                      <button
+                        onClick={() => handleKickPlayer(p.id)}
+                        title="Remove Player"
+                        aria-label={`Remove ${p.nickname}`}
+                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-slate-400 hover:text-rose-400 cursor-pointer ml-1 p-0.5"
+                      >
+                        <UserX className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -586,6 +728,87 @@ export const AdminHostView: React.FC<AdminHostViewProps> = ({ gameId, onFinishGa
           </div>
         </div>
       ) : null}
+
+      {/* Fullscreen / Projector QR Code Modal */}
+      {qrModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setQrModalOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-md rounded-3xl bg-slate-900 border-2 border-indigo-500/40 p-6 sm:p-8 shadow-2xl text-center space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setQrModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label="Close QR Code Modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold uppercase">
+                <QrCode className="w-3.5 h-3.5" />
+                <span>Instant Mobile Join</span>
+              </div>
+              <h3 className="text-2xl font-black text-white">{game.quizTitle}</h3>
+              <p className="text-xs text-slate-400">
+                Scan with your phone camera to open CYBER|ARENA with the Game PIN pre-filled
+              </p>
+            </div>
+
+            {qrCodeDataUrl && (
+              <div className="p-4 rounded-3xl bg-white shadow-2xl mx-auto inline-block border-4 border-indigo-500/40">
+                <img
+                  src={qrCodeDataUrl}
+                  alt={`QR Code for Game PIN ${game.gamePin}`}
+                  className="w-64 h-64 sm:w-72 sm:h-72 object-contain mx-auto"
+                />
+              </div>
+            )}
+
+            <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                GAME PIN
+              </span>
+              <span className="text-3xl font-mono font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300">
+                {game.gamePin}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleCopyJoinLink}
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-colors cursor-pointer"
+              >
+                {copiedLink ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span className="text-emerald-300">Copied Join Link!</span>
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="w-4 h-4 text-indigo-400" />
+                    <span>Copy Join Link</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadQr}
+                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-lg shadow-indigo-600/30"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download QR</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

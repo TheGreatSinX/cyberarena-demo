@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { doc, collection, onSnapshot, getDocs, getDoc, query, orderBy } from 'firebase/firestore';
+import { doc, collection, onSnapshot, getDocs, getDoc, query, orderBy, where } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
 import { db } from '../../lib/firebase/config';
-import { Game, GameQuestionSnapshot, Player, Question } from '../../types';
+import { Game, GameQuestionSnapshot, Player, Question, AnswerSubmission } from '../../types';
 import {
   submitPlayerAnswer,
   completePlayerSelfPacedSession,
@@ -37,6 +37,7 @@ interface PlayerViewProps {
     dueDate?: string | null;
     avatarId?: string;
     avatarUrl?: string;
+    alreadyCompleted?: boolean;
   };
   onExit: () => void;
 }
@@ -84,7 +85,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
   const [allQuestions, setAllQuestions] = useState<GameQuestionSnapshot[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState<boolean>(true);
   const [currentIdx, setCurrentIdx] = useState<number>(0);
-  const [isCompleted, setIsCompleted] = useState<boolean>(false);
+  const [isCompleted, setIsCompleted] = useState<boolean>(Boolean(session.alreadyCompleted));
 
   const [playerData, setPlayerData] = useState<Player | null>(null);
   const myAvatar = getAvatarById(playerData?.avatarId || session.avatarId);
@@ -132,7 +133,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
     return () => unsub();
   }, [gameId]);
 
-  // 2. Load all questions for continuous self-paced progression
+  // 2. Load all questions and check if participant already completed or answered questions
   useEffect(() => {
     const loadQuestions = async () => {
       try {
@@ -141,50 +142,81 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
           query(collection(db, `games/${gameId}/questions`), orderBy('sortOrder', 'asc'))
         );
 
+        let loadedList: GameQuestionSnapshot[] = [];
+
         if (!qSnap.empty) {
-          const list = qSnap.docs.map(
+          loadedList = qSnap.docs.map(
             (d) => ({ id: d.id, ...d.data() } as GameQuestionSnapshot)
           );
-          setAllQuestions(list);
-          if (list[0]) {
-            setTimeRemaining(list[0].timeLimitSeconds || 20);
-            questionStartRef.current = Date.now();
+        } else {
+          // Fallback: load from parent quiz if game questions subcollection was empty
+          const gDoc = await getDoc(doc(db, 'games', gameId));
+          if (gDoc.exists()) {
+            const gData = gDoc.data() as Game;
+            if (gData.quizId) {
+              const origSnap = await getDocs(
+                query(
+                  collection(db, `quizzes/${gData.quizId}/questions`),
+                  orderBy('sortOrder', 'asc')
+                )
+              );
+              loadedList = origSnap.docs.map((d, i) => {
+                const q = d.data() as Question;
+                return {
+                  id: d.id,
+                  questionType: q.questionType,
+                  questionText: q.questionText,
+                  imageUrl: q.imageUrl || null,
+                  explanation: q.explanation || null,
+                  timeLimitSeconds: q.timeLimitSeconds || 20,
+                  points: q.points || 1000,
+                  sortOrder: q.sortOrder || i + 1,
+                  options: q.options || [],
+                };
+              });
+            }
           }
+        }
+
+        setAllQuestions(loadedList);
+
+        // Check if this participant has already completed the quiz or answered questions
+        const completedInStorage =
+          Boolean(session.alreadyCompleted) ||
+          localStorage.getItem(`quizarena_completed_game_${gameId}_${playerId}`) === 'true';
+
+        if (completedInStorage) {
+          setIsCompleted(true);
           setLoadingQuestions(false);
           return;
         }
 
-        // Fallback: load from parent quiz if game questions subcollection was empty
-        const gDoc = await getDoc(doc(db, 'games', gameId));
-        if (gDoc.exists()) {
-          const gData = gDoc.data() as Game;
-          if (gData.quizId) {
-            const origSnap = await getDocs(
-              query(
-                collection(db, `quizzes/${gData.quizId}/questions`),
-                orderBy('sortOrder', 'asc')
-              )
-            );
-            const fallbackList: GameQuestionSnapshot[] = origSnap.docs.map((d, i) => {
-              const q = d.data() as Question;
-              return {
-                id: d.id,
-                questionType: q.questionType,
-                questionText: q.questionText,
-                imageUrl: q.imageUrl || null,
-                explanation: q.explanation || null,
-                timeLimitSeconds: q.timeLimitSeconds || 20,
-                points: q.points || 1000,
-                sortOrder: q.sortOrder || i + 1,
-                options: q.options || [],
-              };
-            });
-            setAllQuestions(fallbackList);
-            if (fallbackList[0]) {
-              setTimeRemaining(fallbackList[0].timeLimitSeconds || 20);
-              questionStartRef.current = Date.now();
-            }
-          }
+        const ansSnap = await getDocs(
+          query(collection(db, `games/${gameId}/answers`), where('playerId', '==', playerId))
+        );
+        const answeredIds = new Set(
+          ansSnap.docs.map((d) => (d.data() as AnswerSubmission).questionId)
+        );
+
+        if (loadedList.length > 0 && answeredIds.size >= loadedList.length) {
+          // Participant already answered every question — lock into completed state
+          localStorage.setItem(
+            `quizarena_completed_pin_${session.gamePin}`,
+            JSON.stringify({ playerId, sessionToken, gameId, nickname })
+          );
+          localStorage.setItem(`quizarena_completed_game_${gameId}_${playerId}`, 'true');
+          setIsCompleted(true);
+          setLoadingQuestions(false);
+          return;
+        }
+
+        // Resume at first unanswered question so previously answered questions cannot be retaken
+        const firstUnansweredIdx = loadedList.findIndex((q) => !answeredIds.has(q.id));
+        const startIdx = firstUnansweredIdx >= 0 ? firstUnansweredIdx : 0;
+        setCurrentIdx(startIdx);
+        if (loadedList[startIdx]) {
+          setTimeRemaining(loadedList[startIdx].timeLimitSeconds || 20);
+          questionStartRef.current = Date.now();
         }
       } catch (err) {
         console.error('Error loading questions:', err);
@@ -194,7 +226,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
     };
 
     loadQuestions();
-  }, [gameId]);
+  }, [gameId, playerId, session.alreadyCompleted, session.gamePin, sessionToken, nickname]);
 
   // 3. Real-time Player Data listener
   useEffect(() => {
@@ -301,6 +333,18 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
     if (currentIdx + 1 < allQuestions.length) {
       setCurrentIdx((prev) => prev + 1);
     } else {
+      localStorage.setItem(
+        `quizarena_completed_pin_${session.gamePin}`,
+        JSON.stringify({ playerId, sessionToken, gameId, nickname })
+      );
+      localStorage.setItem(`quizarena_completed_game_${gameId}_${playerId}`, 'true');
+      localStorage.setItem(
+        `quizarena_session_${gameId}`,
+        JSON.stringify({
+          ...session,
+          alreadyCompleted: true,
+        })
+      );
       await completePlayerSelfPacedSession(gameId, playerId);
       setIsCompleted(true);
       soundManager.playVictory();
@@ -375,14 +419,14 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
     );
   }
 
-  // COMPLETED SCREEN / FINAL SUMMARY & STANDINGS
+  // COMPLETED SCREEN / FINAL SUMMARY
   if (isCompleted || allQuestions.length === 0) {
     const totalQuestionsCount = allQuestions.length || game?.totalQuestions || 1;
     return (
-      <div className="min-h-[calc(100dvh-3.5rem)] sm:min-h-[calc(100dvh-4rem)] flex flex-col justify-between items-center p-4 sm:p-8 pb-safe bg-gradient-to-b from-slate-950 via-indigo-950/60 to-slate-950 text-white">
-        <div className="text-center pt-2 sm:pt-4">
+      <div className="min-h-[calc(100dvh-3.5rem)] sm:min-h-[calc(100dvh-4rem)] flex flex-col justify-center items-center gap-6 p-4 sm:p-8 pb-safe bg-gradient-to-b from-slate-950 via-indigo-950/60 to-slate-950 text-white">
+        <div className="text-center">
           <span className="inline-block px-3 py-1 rounded-full bg-[#00A191]/20 border border-[#00A191]/40 text-[#00A191] text-xs font-bold uppercase tracking-wider mb-2">
-            PIN: {session.gamePin} • Completed
+            PIN: {session.gamePin} • Quiz Completed
           </span>
           <h1 className="text-2xl sm:text-5xl font-black tracking-tight mb-1 sm:mb-2">
             QUIZ COMPLETE!
@@ -390,77 +434,10 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
           <p className="text-slate-300 text-xs sm:text-sm">
             Thank you, <strong className="text-white">{nickname}</strong>! Your answers have been saved.
           </p>
+          <p className="text-xs text-[#F05A28] font-semibold mt-1.5">
+            You have already completed this quiz. Retakes are not permitted.
+          </p>
         </div>
-
-        {/* Podium Top 3 */}
-        {topPlayers.length > 0 && (
-          <div className="w-full max-w-lg grid grid-cols-3 gap-2 sm:gap-4 items-end my-auto py-6">
-            {/* 2nd place */}
-            {topPlayers[1] ? (
-              <div className="flex flex-col items-center">
-                <img
-                  src={getAvatarById(topPlayers[1].avatarId).imageUrl}
-                  alt={topPlayers[1].nickname}
-                  className="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover border-2 border-slate-300 shadow-lg mb-1.5"
-                />
-                <span className="font-bold text-xs sm:text-sm text-slate-300 truncate max-w-full">
-                  {topPlayers[1].nickname}
-                </span>
-                <span className="font-mono text-xs text-slate-400 mb-2">{topPlayers[1].score}</span>
-                <div className="w-full h-24 sm:h-32 rounded-t-2xl bg-gradient-to-t from-slate-800 to-slate-700 flex items-center justify-center border-t-2 border-slate-400 shadow-xl">
-                  <span className="text-2xl font-black text-slate-300">2</span>
-                </div>
-              </div>
-            ) : (
-              <div />
-            )}
-
-            {/* 1st place */}
-            {topPlayers[0] && (
-              <div className="flex flex-col items-center">
-                <div className="relative mb-1.5">
-                  <img
-                    src={getAvatarById(topPlayers[0].avatarId).imageUrl}
-                    alt={topPlayers[0].nickname}
-                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-3 border-amber-400 shadow-xl shadow-amber-400/40"
-                  />
-                  <div className="absolute -top-2 -right-2 p-1.5 rounded-full bg-amber-400 text-slate-950 shadow-md">
-                    <Trophy className="w-4 h-4" />
-                  </div>
-                </div>
-                <span className="font-black text-sm sm:text-base text-amber-300 truncate max-w-full">
-                  {topPlayers[0].nickname}
-                </span>
-                <span className="font-mono text-xs text-amber-400 font-bold mb-2">
-                  {topPlayers[0].score}
-                </span>
-                <div className="w-full h-32 sm:h-44 rounded-t-2xl bg-gradient-to-t from-amber-600 to-amber-400 flex items-center justify-center border-t-2 border-amber-200 shadow-2xl shadow-amber-500/20">
-                  <span className="text-4xl font-black text-slate-950">1</span>
-                </div>
-              </div>
-            )}
-
-            {/* 3rd place */}
-            {topPlayers[2] ? (
-              <div className="flex flex-col items-center">
-                <img
-                  src={getAvatarById(topPlayers[2].avatarId).imageUrl}
-                  alt={topPlayers[2].nickname}
-                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-amber-700 shadow-md mb-1.5"
-                />
-                <span className="font-bold text-xs sm:text-sm text-slate-400 truncate max-w-full">
-                  {topPlayers[2].nickname}
-                </span>
-                <span className="font-mono text-xs text-slate-400 mb-2">{topPlayers[2].score}</span>
-                <div className="w-full h-16 sm:h-24 rounded-t-2xl bg-gradient-to-t from-amber-950 to-amber-900 flex items-center justify-center border-t-2 border-amber-700 shadow-lg">
-                  <span className="text-xl font-black text-amber-600">3</span>
-                </div>
-              </div>
-            ) : (
-              <div />
-            )}
-          </div>
-        )}
 
         {/* Personal Summary Card */}
         <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl text-center space-y-4">

@@ -262,9 +262,11 @@ export async function joinGameSession(
   sessionToken: string;
   gameId: string;
   quizTitle: string;
+  nickname: string;
   dueDate?: string | null;
   avatarId?: string;
   avatarUrl?: string;
+  alreadyCompleted?: boolean;
 }> {
   const nickname = rawNickname.trim().slice(0, 48);
   if (!nickname) {
@@ -323,6 +325,77 @@ export async function joinGameSession(
     }
   }
 
+  // Check if this participant already exists in games/{gameId}/players (by Full Name case-insensitive OR cached completed PIN session)
+  const playersSnap = await getDocs(collection(db, `games/${gameId}/players`));
+  let cachedCompletedPlayerId: string | null = null;
+  try {
+    const cachedRaw = localStorage.getItem(`quizarena_completed_pin_${cleanPin}`);
+    if (cachedRaw) {
+      const parsed = JSON.parse(cachedRaw);
+      if (parsed?.gameId === gameId && parsed?.playerId) {
+        cachedCompletedPlayerId = parsed.playerId;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const normalizedInputName = nickname.toLowerCase();
+  const existingPlayerDoc =
+    playersSnap.docs.find(
+      (d) => (d.data().nickname || '').trim().toLowerCase() === normalizedInputName
+    ) ||
+    (cachedCompletedPlayerId
+      ? playersSnap.docs.find((d) => d.id === cachedCompletedPlayerId)
+      : undefined);
+
+  if (existingPlayerDoc) {
+    const existingPlayer = existingPlayerDoc.data() as Player;
+    const existingPlayerId = existingPlayerDoc.id;
+
+    // Check how many answers this player has already submitted or if a result record exists
+    const resultSnap = await getDoc(doc(db, `games/${gameId}/results`, existingPlayerId));
+    const answersSnap = await getDocs(
+      query(
+        collection(db, `games/${gameId}/answers`),
+        where('playerId', '==', existingPlayerId)
+      )
+    );
+
+    const totalQ = gameData.totalQuestions || 1;
+    const isAlreadyDone =
+      Boolean(cachedCompletedPlayerId) ||
+      localStorage.getItem(`quizarena_completed_game_${gameId}_${existingPlayerId}`) === 'true' ||
+      answersSnap.size >= totalQ ||
+      resultSnap.exists();
+
+    // Ensure their result summary is finalized if they are returning after completion
+    if (isAlreadyDone) {
+      localStorage.setItem(
+        `quizarena_completed_pin_${cleanPin}`,
+        JSON.stringify({
+          playerId: existingPlayerId,
+          sessionToken: existingPlayer.sessionToken,
+          gameId,
+          nickname: existingPlayer.nickname,
+        })
+      );
+      localStorage.setItem(`quizarena_completed_game_${gameId}_${existingPlayerId}`, 'true');
+    }
+
+    return {
+      playerId: existingPlayerId,
+      sessionToken: existingPlayer.sessionToken,
+      gameId,
+      quizTitle: gameData.quizTitle,
+      nickname: existingPlayer.nickname || nickname,
+      dueDate: effectiveDueDate,
+      avatarId: existingPlayer.avatarId || avatarId || 'blue_thinker',
+      avatarUrl: existingPlayer.avatarUrl || avatarUrl || '',
+      alreadyCompleted: isAlreadyDone,
+    };
+  }
+
   if (isPastDueDate(effectiveDueDate)) {
     throw new Error(`This quiz passed its due date (${effectiveDueDate}) and is no longer accepting submissions.`);
   }
@@ -371,9 +444,11 @@ export async function joinGameSession(
     sessionToken,
     gameId,
     quizTitle: gameData.quizTitle,
+    nickname,
     dueDate: effectiveDueDate,
     avatarId: finalAvatarId,
     avatarUrl: finalAvatarUrl,
+    alreadyCompleted: false,
   };
 }
 

@@ -14,19 +14,49 @@ interface LandingViewProps {
     quizTitle: string;
     nickname: string;
     gamePin: string;
+    dueDate?: string | null;
     avatarId?: string;
     avatarUrl?: string;
+    alreadyCompleted?: boolean;
   }) => void;
   onNavigateAdmin?: () => void;
 }
 
 export const LandingView: React.FC<LandingViewProps> = ({ onJoinSuccess, onNavigateAdmin }) => {
-  const [pin, setPin] = useState('');
+  const [pin, setPin] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlPin = params.get('pin') || params.get('gamePin') || '';
+      return urlPin.replace(/\D/g, '').slice(0, 6);
+    } catch {
+      return '';
+    }
+  });
   const [nickname, setNickname] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState<PlayerAvatar | null>(DEFAULT_AVATAR);
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const syncPinFromUrl = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const urlPin = params.get('pin') || params.get('gamePin');
+        if (urlPin) {
+          const clean = urlPin.replace(/\D/g, '').slice(0, 6);
+          if (clean.length === 6) {
+            setPin(clean);
+          }
+        }
+      } catch {
+        // ignore URL parse issues
+      }
+    };
+    syncPinFromUrl();
+    window.addEventListener('popstate', syncPinFromUrl);
+    return () => window.removeEventListener('popstate', syncPinFromUrl);
+  }, []);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,10 +86,12 @@ export const LandingView: React.FC<LandingViewProps> = ({ onJoinSuccess, onNavig
         sessionToken: res.sessionToken,
         gameId: res.gameId,
         quizTitle: res.quizTitle,
-        nickname: cleanNick,
+        nickname: res.nickname || cleanNick,
         gamePin: cleanPin,
-        avatarId: avatarToUse.id,
-        avatarUrl: avatarToUse.imageUrl,
+        dueDate: res.dueDate || null,
+        avatarId: res.avatarId || avatarToUse.id,
+        avatarUrl: res.avatarUrl || avatarToUse.imageUrl,
+        alreadyCompleted: Boolean(res.alreadyCompleted),
       });
     } catch (err: any) {
       setError(err?.message || 'Failed to join quiz. Please verify your PIN and try again.');

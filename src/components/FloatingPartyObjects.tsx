@@ -3,24 +3,68 @@ import { motion } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { soundManager } from '../lib/sound/soundManager';
 
-const CYBER_RED = '#E5322C';
-const CYBER_DARK = '#18181B';
-const CYBER_SLATE = '#27272A';
-
-// Shared SVG filter so dark charcoal + red icons from the reference sheet pop crisply on dark backgrounds
-const CyberIconDefs: React.FC<{ idPrefix: string }> = ({ idPrefix }) => (
+// Shared 3D Clay / Glossy Material Gradients & Filters matching the uploaded 3D Cyber Security Icon Set
+const Clay3DDefs: React.FC<{ idPrefix: string }> = ({ idPrefix }) => (
   <defs>
-    <filter id={`${idPrefix}_glow`} x="-25%" y="-25%" width="150%" height="150%">
-      {/* Crisp light rim so dark charcoal elements stand out clearly against slate-950 */}
-      <feDropShadow dx="0" dy="0" stdDeviation="1.4" floodColor="#F8FAFC" floodOpacity="0.85" />
-      {/* Subtle 3D elevation shadow */}
-      <feDropShadow dx="0" dy="8" stdDeviation="8" floodColor="#E5322C" floodOpacity="0.28" />
+    {/* Soft 3D ambient drop shadow + subtle rim glow */}
+    <filter id={`${idPrefix}_3d_shadow`} x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="8" floodColor="#000000" floodOpacity="0.65" />
+      <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#3B82F6" floodOpacity="0.28" />
     </filter>
+
+    {/* Dark Matte / Glossy Charcoal 3D Gradient */}
+    <linearGradient id={`${idPrefix}_dark_matte`} x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#4B5563" />
+      <stop offset="35%" stopColor="#27272A" />
+      <stop offset="80%" stopColor="#18181B" />
+      <stop offset="100%" stopColor="#09090B" />
+    </linearGradient>
+
+    {/* Radial Glossy Black Sphere Gradient */}
+    <radialGradient id={`${idPrefix}_black_sphere`} cx="35%" cy="28%" r="70%">
+      <stop offset="0%" stopColor="#71717A" />
+      <stop offset="22%" stopColor="#3F3F46" />
+      <stop offset="60%" stopColor="#18181B" />
+      <stop offset="92%" stopColor="#09090B" />
+      <stop offset="100%" stopColor="#52525B" />
+    </radialGradient>
+
+    {/* Vibrant 3D Blue Clay Gradient */}
+    <linearGradient id={`${idPrefix}_blue_clay`} x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stopColor="#60A5FA" />
+      <stop offset="45%" stopColor="#3B82F6" />
+      <stop offset="85%" stopColor="#1D4ED8" />
+      <stop offset="100%" stopColor="#1E3A8A" />
+    </linearGradient>
+
+    {/* Radial 3D Blue Sphere / Knob Gradient */}
+    <radialGradient id={`${idPrefix}_blue_orb`} cx="35%" cy="30%" r="68%">
+      <stop offset="0%" stopColor="#93C5FD" />
+      <stop offset="38%" stopColor="#3B82F6" />
+      <stop offset="82%" stopColor="#1D4ED8" />
+      <stop offset="100%" stopColor="#1E3A8A" />
+    </radialGradient>
+
+    {/* Soft 3D White / Silver Clay Gradient */}
+    <linearGradient id={`${idPrefix}_white_clay`} x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stopColor="#FFFFFF" />
+      <stop offset="55%" stopColor="#E4E4E7" />
+      <stop offset="88%" stopColor="#A1A1AA" />
+      <stop offset="100%" stopColor="#71717A" />
+    </linearGradient>
+
+    {/* Radial 3D White Puff Gradient for Cloud */}
+    <radialGradient id={`${idPrefix}_cloud_puff`} cx="38%" cy="28%" r="70%">
+      <stop offset="0%" stopColor="#FFFFFF" />
+      <stop offset="50%" stopColor="#E4E4E7" />
+      <stop offset="85%" stopColor="#A1A1AA" />
+      <stop offset="100%" stopColor="#71717A" />
+    </radialGradient>
   </defs>
 );
 
-// 1. User Access (Businessman silhouette + Red Padlock with Checkmark)
-export const UserAccessObject: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 105 }) => (
+// 1. 3D Cyber Bomb (Glossy black sphere bomb, braided white fuse rope, glowing 3D blue spark)
+export const Bomb3DIcon: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 104 }) => (
   <svg
     width={size}
     height={size}
@@ -29,57 +73,67 @@ export const UserAccessObject: React.FC<{ className?: string; size?: number }> =
     xmlns="http://www.w3.org/2000/svg"
     className={`transition-transform ${className}`}
   >
-    <CyberIconDefs idPrefix="userAccess" />
-    <g filter="url(#userAccess_glow)">
-      {/* Suit Shoulders & Torso */}
+    <Clay3DDefs idPrefix="bomb3d" />
+    <g filter="url(#bomb3d_3d_shadow)">
+      {/* Braided White Fuse Cord */}
       <path
-        d="M18 134 C18 106, 36 94, 58 90 L90 90 C112 94, 126 106, 126 134 Z"
-        fill={CYBER_DARK}
+        d="M84 44 C88 26, 108 24, 122 34"
+        stroke="url(#bomb3d_white_clay)"
+        strokeWidth="10"
+        strokeLinecap="round"
       />
-      {/* White Shirt V-Collar Cutout */}
-      <path d="M58 90 L74 128 L90 90 Z" fill="#FFFFFF" />
-      {/* Black Tie */}
-      <path d="M71 94 L77 94 L79 122 L74 130 L69 122 Z" fill={CYBER_DARK} />
-      {/* Neck */}
-      <rect x="65" y="76" width="18" height="16" rx="4" fill={CYBER_DARK} />
-      {/* Head & Ears & Hair Silhouette */}
+      {/* Rope texture ribs */}
       <path
-        d="M54 50 C54 32, 62 24, 74 24 C86 24, 94 32, 94 50 C97 51, 98 56, 96 60 C95 62, 93 63, 92 64 C90 74, 83 82, 74 82 C65 82, 58 74, 56 64 C55 63, 53 62, 52 60 C50 56, 51 51, 54 50 Z"
-        fill={CYBER_DARK}
-      />
-
-      {/* White Separator Backing for Overlapping Red Lock */}
-      <rect x="92" y="92" width="50" height="48" rx="9" fill="#FFFFFF" />
-      <path
-        d="M104 94 V83 C104 73, 130 73, 130 83 V94"
-        stroke="#FFFFFF"
-        strokeWidth="12"
+        d="M88 38 L94 34 M96 33 L102 31 M105 31 L111 32 M114 33 L119 36"
+        stroke="#71717A"
+        strokeWidth="2.2"
         strokeLinecap="round"
       />
 
-      {/* Red Padlock Shackle */}
+      {/* 3D Blue Spark Burst at Fuse Tip */}
+      <g transform="translate(125, 36)">
+        <path
+          d="M0 -15 L4 -5 L14 -9 L7 0 L15 7 L4 6 L2 16 L-3 6 L-13 10 L-6 1 L-14 -6 L-4 -5 Z"
+          fill="url(#bomb3d_blue_clay)"
+        />
+        <circle cx="0" cy="0" r="5" fill="#93C5FD" />
+        <circle cx="0" cy="0" r="2.2" fill="#FFFFFF" />
+      </g>
+
+      {/* Bomb Neck / Nozzle Collar */}
+      <ellipse cx="80" cy="48" rx="15" ry="6" fill="#27272A" stroke="#52525B" strokeWidth="1.5" />
       <path
-        d="M106 95 V83 C106 75, 128 75, 128 83 V95"
-        stroke={CYBER_RED}
-        strokeWidth="7"
-        strokeLinecap="round"
+        d="M65 48 V58 C65 62, 95 62, 95 58 V48"
+        fill="url(#bomb3d_dark_matte)"
       />
-      {/* Red Padlock Body */}
-      <rect x="96" y="95" width="42" height="42" rx="7" fill={CYBER_RED} />
-      {/* White Checkmark inside Lock */}
+      <ellipse cx="80" cy="48" rx="11" ry="3.8" fill="#09090B" />
+
+      {/* Main 3D Glossy Black Bomb Sphere */}
+      <circle cx="76" cy="94" r="42" fill="url(#bomb3d_black_sphere)" />
+
+      {/* Specular 3D Soft Highlights & Bottom Rim Light */}
+      <ellipse
+        cx="60"
+        cy="76"
+        rx="14"
+        ry="9"
+        transform="rotate(-28 60 76)"
+        fill="#FFFFFF"
+        fillOpacity="0.26"
+      />
       <path
-        d="M108 116 L115 123 L128 109"
-        stroke="#FFFFFF"
-        strokeWidth="5.5"
+        d="M46 122 C60 135, 92 135, 106 120"
+        stroke="#E4E4E7"
+        strokeWidth="2.5"
         strokeLinecap="round"
-        strokeLinejoin="round"
+        strokeOpacity="0.65"
       />
     </g>
   </svg>
 );
 
-// 2. Password (Black Padlock + Red 4-Star Password Banner)
-export const PasswordLockObject: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 105 }) => (
+// 2. 3D Microchip / Processor Node (Dark rounded square chip with blue circuit arms & white 3D sphere nodes)
+export const ChipCircuit3DIcon: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 104 }) => (
   <svg
     width={size}
     height={size}
@@ -88,44 +142,194 @@ export const PasswordLockObject: React.FC<{ className?: string; size?: number }>
     xmlns="http://www.w3.org/2000/svg"
     className={`transition-transform ${className}`}
   >
-    <CyberIconDefs idPrefix="passwordLock" />
-    <g filter="url(#passwordLock_glow)">
-      {/* Padlock Shackle */}
+    <Clay3DDefs idPrefix="chip3d" />
+    <g filter="url(#chip3d_3d_shadow)">
+      {/* Blue 3D Circuit Arms */}
+      {/* Top Left Arm */}
+      <path d="M70 56 V36 H58 V26" stroke="url(#chip3d_blue_clay)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Top Right Arm */}
+      <path d="M90 56 V26" stroke="url(#chip3d_blue_clay)" strokeWidth="8" strokeLinecap="round" />
+      {/* Left Arm */}
+      <path d="M54 78 H38 V66" stroke="url(#chip3d_blue_clay)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Right Arm */}
+      <path d="M106 76 H122 V86 H134" stroke="url(#chip3d_blue_clay)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Bottom Left Arm */}
+      <path d="M66 104 V116 H48 V134" stroke="url(#chip3d_blue_clay)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Bottom Right Arm */}
+      <path d="M92 104 V122 H106 V136" stroke="url(#chip3d_blue_clay)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+
+      {/* White 3D Sphere Terminals */}
+      <circle cx="58" cy="24" r="7.5" fill="url(#chip3d_white_clay)" />
+      <circle cx="90" cy="24" r="7.5" fill="url(#chip3d_white_clay)" />
+      <circle cx="30" cy="66" r="7.5" fill="url(#chip3d_white_clay)" />
+      <circle cx="136" cy="86" r="7.5" fill="url(#chip3d_white_clay)" />
+      <circle cx="48" cy="136" r="7.5" fill="url(#chip3d_white_clay)" />
+      <circle cx="106" cy="136" r="7.5" fill="url(#chip3d_white_clay)" />
+
+      {/* Central 3D Dark Processor Housing */}
+      <rect
+        x="50"
+        y="52"
+        width="60"
+        height="58"
+        rx="14"
+        fill="url(#chip3d_dark_matte)"
+        stroke="#52525B"
+        strokeWidth="2"
+      />
+      {/* Inner Raised Die */}
+      <rect
+        x="58"
+        y="60"
+        width="44"
+        height="42"
+        rx="9"
+        fill="#27272A"
+        stroke="#3F3F46"
+        strokeWidth="2"
+      />
+      {/* Top bevel highlight */}
+      <path d="M62 63 H98" stroke="#71717A" strokeWidth="2" strokeLinecap="round" strokeOpacity="0.6" />
+    </g>
+  </svg>
+);
+
+// 3. 3D Biometric Fingerprint Tile (Dark 3D rounded square with 4 blue side spheres & glowing white fingerprint)
+export const Fingerprint3DIcon: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 104 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 160 160"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={`transition-transform ${className}`}
+  >
+    <Clay3DDefs idPrefix="fp3d" />
+    <g filter="url(#fp3d_3d_shadow)">
+      {/* 4 Protruding 3D Blue Spheres (Top, Right, Bottom, Left) */}
+      <circle cx="80" cy="26" r="11" fill="url(#fp3d_blue_orb)" />
+      <circle cx="80" cy="134" r="11" fill="url(#fp3d_blue_orb)" />
+      <circle cx="26" cy="80" r="11" fill="url(#fp3d_blue_orb)" />
+      <circle cx="134" cy="80" r="11" fill="url(#fp3d_blue_orb)" />
+
+      {/* Outer 3D Dark Rounded Square Body */}
+      <rect
+        x="32"
+        y="32"
+        width="96"
+        height="96"
+        rx="24"
+        fill="url(#fp3d_dark_matte)"
+        stroke="#71717A"
+        strokeWidth="2.5"
+      />
+      {/* Recessed Inner Face */}
+      <rect
+        x="40"
+        y="40"
+        width="80"
+        height="80"
+        rx="18"
+        fill="#27272A"
+        stroke="#3F3F46"
+        strokeWidth="1.5"
+      />
+
+      {/* Glowing White 3D Fingerprint Ridges */}
       <path
-        d="M54 68 V46 C54 26, 106 26, 106 46 V68"
-        stroke={CYBER_DARK}
-        strokeWidth="14"
+        d="M58 62 C68 50, 92 50, 102 62"
+        stroke="#FFFFFF"
+        strokeWidth="4.5"
         strokeLinecap="round"
       />
-      {/* Upper Lock Body */}
       <path
-        d="M36 74 C36 66, 42 62, 50 62 H110 C118 62, 124 66, 124 74 V84 H36 V74 Z"
-        fill={CYBER_DARK}
+        d="M52 78 C52 56, 108 56, 108 78 C108 90, 105 98, 100 106"
+        stroke="#FFFFFF"
+        strokeWidth="4.5"
+        strokeLinecap="round"
       />
-      {/* Lower Lock Body */}
       <path
-        d="M36 116 H124 V126 C124 134, 118 138, 110 138 H50 C42 138, 36 134, 36 126 V116 Z"
-        fill={CYBER_DARK}
+        d="M53 90 C54 96, 57 102, 61 107"
+        stroke="#FFFFFF"
+        strokeWidth="4.5"
+        strokeLinecap="round"
       />
-      {/* White Cutout Backing for Red Star Strip */}
-      <rect x="28" y="83" width="104" height="34" rx="9" fill="#FFFFFF" />
-      {/* Red Password Strip */}
-      <rect x="31" y="86" width="98" height="28" rx="7" fill={CYBER_RED} />
+      <path
+        d="M62 80 C62 64, 98 64, 98 80 C98 92, 95 100, 90 108"
+        stroke="#FFFFFF"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M63 92 C65 98, 68 104, 72 108"
+        stroke="#FFFFFF"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M72 80 C72 72, 88 72, 88 80 C88 90, 86 100, 82 108"
+        stroke="#FFFFFF"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M80 80 V98"
+        stroke="#FFFFFF"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+      />
+    </g>
+  </svg>
+);
 
-      {/* 4 White 5-Pointed Stars */}
-      {[46, 68.5, 91.5, 114].map((cx, i) => (
-        <polygon
-          key={i}
-          points={`${cx},91 ${cx + 2.4},96.5 ${cx + 8.2},97.2 ${cx + 3.8},101.2 ${cx + 5},107 ${cx},104 ${cx - 5},107 ${cx - 3.8},101.2 ${cx - 8.2},97.2 ${cx - 2.4},96.5`}
-          fill="#FFFFFF"
-        />
+// 4. 3D Password Badge (Blue-rimmed dark pill housing 4 3D white asterisks)
+export const PasswordPill3DIcon: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 104 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 160 160"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={`transition-transform ${className}`}
+  >
+    <Clay3DDefs idPrefix="pass3d" />
+    <g filter="url(#pass3d_3d_shadow)">
+      {/* 3D Blue Outer Bezel Pill */}
+      <rect
+        x="14"
+        y="52"
+        width="132"
+        height="56"
+        rx="16"
+        fill="url(#pass3d_blue_clay)"
+      />
+      {/* 3D Dark Inner Recessed Plate */}
+      <rect
+        x="20"
+        y="58"
+        width="120"
+        height="44"
+        rx="11"
+        fill="url(#pass3d_dark_matte)"
+        stroke="#52525B"
+        strokeWidth="1.5"
+      />
+
+      {/* 4 White 3D Asterisk Stars (* * * *) */}
+      {[38, 66, 94, 122].map((cx, idx) => (
+        <g key={idx} transform={`translate(${cx}, 80)`}>
+          <line x1="0" y1="-10" x2="0" y2="10" stroke="url(#pass3d_white_clay)" strokeWidth="4.2" strokeLinecap="round" />
+          <line x1="-8.5" y1="-5" x2="8.5" y2="5" stroke="url(#pass3d_white_clay)" strokeWidth="4.2" strokeLinecap="round" />
+          <line x1="-8.5" y1="5" x2="8.5" y2="-5" stroke="url(#pass3d_white_clay)" strokeWidth="4.2" strokeLinecap="round" />
+          <circle cx="0" cy="0" r="2.5" fill="#FFFFFF" />
+        </g>
       ))}
     </g>
   </svg>
 );
 
-// 3. Fingerprint (Black Scanner Brackets + Red Fingerprint Ridges)
-export const FingerprintObject: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 105 }) => (
+// 5. 3D Cloud Shield (Plump 3D white clay cloud with dark shield & glowing blue checkmark)
+export const CloudShield3DIcon: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 104 }) => (
   <svg
     width={size}
     height={size}
@@ -134,69 +338,41 @@ export const FingerprintObject: React.FC<{ className?: string; size?: number }> 
     xmlns="http://www.w3.org/2000/svg"
     className={`transition-transform ${className}`}
   >
-    <CyberIconDefs idPrefix="fingerprint" />
-    <g filter="url(#fingerprint_glow)">
-      {/* 4 Black Corner Viewfinder Brackets */}
-      <path d="M26 54 V34 C26 28, 30 24, 36 24 H56" stroke={CYBER_DARK} strokeWidth="9" strokeLinecap="round" />
-      <path d="M104 24 H124 C130 24, 134 28, 134 34 V54" stroke={CYBER_DARK} strokeWidth="9" strokeLinecap="round" />
-      <path d="M26 106 V126 C26 132, 30 136, 36 136 H56" stroke={CYBER_DARK} strokeWidth="9" strokeLinecap="round" />
-      <path d="M104 136 H124 C130 136, 134 132, 134 126 V106" stroke={CYBER_DARK} strokeWidth="9" strokeLinecap="round" />
+    <Clay3DDefs idPrefix="cloud3d" />
+    <g filter="url(#cloud3d_3d_shadow)">
+      {/* Back Cloud Base */}
+      <path
+        d="M28 114 C16 114, 10 104, 14 94 C17 86, 24 82, 30 82 C34 64, 52 50, 74 44 C94 38, 114 50, 122 68 C132 70, 140 78, 142 88 C148 92, 150 102, 144 110 C140 114, 132 114, 124 114 H28 Z"
+        fill="url(#cloud3d_white_clay)"
+      />
+      {/* Sculpted 3D Puffs for Clay Volume */}
+      <circle cx="50" cy="86" r="22" fill="url(#cloud3d_cloud_puff)" />
+      <circle cx="80" cy="68" r="28" fill="url(#cloud3d_cloud_puff)" />
+      <circle cx="110" cy="84" r="22" fill="url(#cloud3d_cloud_puff)" />
+      <ellipse cx="80" cy="102" rx="56" ry="14" fill="url(#cloud3d_white_clay)" />
 
-      {/* Red Fingerprint Ridges */}
+      {/* Embedded 3D Dark Shield in Center */}
       <path
-        d="M52 54 C64 40, 96 40, 108 54"
-        stroke={CYBER_RED}
-        strokeWidth="5.5"
-        strokeLinecap="round"
+        d="M80 56 L58 64 V82 C58 98, 68 108, 80 113 C92 108, 102 98, 102 82 V64 L80 56 Z"
+        fill="url(#cloud3d_dark_matte)"
+        stroke="#71717A"
+        strokeWidth="2.5"
+        strokeLinejoin="round"
       />
+      {/* Glowing 3D Blue Checkmark */}
       <path
-        d="M44 74 C44 50, 116 50, 116 76 C116 92, 112 106, 106 116"
-        stroke={CYBER_RED}
-        strokeWidth="5.5"
+        d="M70 84 L77 91 L92 75"
+        stroke="url(#cloud3d_blue_clay)"
+        strokeWidth="6.5"
         strokeLinecap="round"
-      />
-      <path
-        d="M44 90 C44 98, 47 108, 52 116"
-        stroke={CYBER_RED}
-        strokeWidth="5.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M55 78 C55 58, 105 58, 105 78 C105 94, 101 108, 95 120"
-        stroke={CYBER_RED}
-        strokeWidth="5.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M56 92 C57 104, 61 114, 67 122"
-        stroke={CYBER_RED}
-        strokeWidth="5.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M67 80 C67 68, 93 68, 93 80 C93 96, 89 112, 83 124"
-        stroke={CYBER_RED}
-        strokeWidth="5.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M68 96 C69 108, 72 116, 75 124"
-        stroke={CYBER_RED}
-        strokeWidth="5.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M80 78 V108"
-        stroke={CYBER_RED}
-        strokeWidth="5.5"
-        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </g>
   </svg>
 );
 
-// 4. Security (Shield with Black Lock + Red Checkmark Circle Badge)
-export const SecurityShieldObject: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 105 }) => (
+// 6. 3D Cyber Globe Shield (Blue gridded 3D sphere with dark shield & white checkmark)
+export const GlobeShield3DIcon: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 104 }) => (
   <svg
     width={size}
     height={size}
@@ -205,342 +381,275 @@ export const SecurityShieldObject: React.FC<{ className?: string; size?: number 
     xmlns="http://www.w3.org/2000/svg"
     className={`transition-transform ${className}`}
   >
-    <CyberIconDefs idPrefix="securityShield" />
-    <g filter="url(#securityShield_glow)">
-      {/* Shield Outer & White Interior */}
+    <Clay3DDefs idPrefix="globe3d" />
+    <g filter="url(#globe3d_3d_shadow)">
+      {/* Base Dark Sphere Core */}
+      <circle cx="80" cy="80" r="52" fill="url(#globe3d_black_sphere)" />
+
+      {/* 3D Blue Latitude & Longitude Grid Bands */}
+      <circle
+        cx="80"
+        cy="80"
+        r="50"
+        stroke="url(#globe3d_blue_clay)"
+        strokeWidth="5.5"
+      />
+      <ellipse
+        cx="80"
+        cy="80"
+        rx="28"
+        ry="50"
+        stroke="url(#globe3d_blue_clay)"
+        strokeWidth="5"
+      />
+      <ellipse
+        cx="80"
+        cy="80"
+        rx="50"
+        ry="24"
+        stroke="url(#globe3d_blue_clay)"
+        strokeWidth="5"
+      />
+      <line x1="80" y1="30" x2="80" y2="130" stroke="url(#globe3d_blue_clay)" strokeWidth="4.5" />
+      <line x1="30" y1="80" x2="130" y2="80" stroke="url(#globe3d_blue_clay)" strokeWidth="4.5" />
+
+      {/* Center 3D Dark Shield */}
       <path
-        d="M72 28 L28 44 V82 C28 112, 50 132, 72 142 C94 132, 116 112, 116 82 V44 L72 28 Z"
-        fill="#FFFFFF"
-        stroke={CYBER_DARK}
-        strokeWidth="10"
+        d="M80 50 L54 60 V82 C54 100, 66 112, 80 118 C94 112, 106 100, 106 82 V60 L80 50 Z"
+        fill="url(#globe3d_dark_matte)"
+        stroke="#60A5FA"
+        strokeWidth="2.5"
         strokeLinejoin="round"
       />
-      {/* Inner Black Padlock Shackle */}
+
+      {/* Crisp White 3D Checkmark */}
       <path
-        d="M60 78 V66 C60 54, 84 54, 84 66 V78"
-        stroke={CYBER_DARK}
+        d="M68 83 L76 91 L93 73"
+        stroke="url(#globe3d_white_clay)"
+        strokeWidth="7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
+  </svg>
+);
+
+// 7. 3D Cyber Bug / Beetle (Blue 3D head & 6 legs with glossy split black carapace shell)
+export const CyberBug3DIcon: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 104 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 160 160"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={`transition-transform ${className}`}
+  >
+    <Clay3DDefs idPrefix="bug3d" />
+    <g filter="url(#bug3d_3d_shadow)">
+      {/* 6 3D Blue Articulated Legs */}
+      {/* Front Pair */}
+      <path d="M56 68 L38 56 L34 44" stroke="url(#bug3d_blue_clay)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M104 68 L122 56 L126 44" stroke="url(#bug3d_blue_clay)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Middle Pair */}
+      <path d="M48 88 L28 84 L22 76" stroke="url(#bug3d_blue_clay)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M112 88 L132 84 L138 76" stroke="url(#bug3d_blue_clay)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Back Pair */}
+      <path d="M54 112 L36 124 L30 136" stroke="url(#bug3d_blue_clay)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M106 112 L124 124 L130 136" stroke="url(#bug3d_blue_clay)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+
+      {/* 3D Blue Dome Head */}
+      <circle cx="80" cy="48" r="20" fill="url(#bug3d_blue_orb)" />
+      {/* Head specular shine */}
+      <ellipse cx="73" cy="40" rx="6" ry="3.5" transform="rotate(-20 73 40)" fill="#BFDBFE" fillOpacity="0.7" />
+
+      {/* Glossy 3D Black Beetle Body / Shell */}
+      <ellipse cx="80" cy="92" rx="34" ry="40" fill="url(#bug3d_black_sphere)" stroke="#52525B" strokeWidth="1.5" />
+
+      {/* Center Wing Seam Split */}
+      <line x1="80" y1="54" x2="80" y2="131" stroke="#09090B" strokeWidth="3.5" />
+      <line x1="81.5" y1="56" x2="81.5" y2="128" stroke="#52525B" strokeWidth="1" strokeOpacity="0.6" />
+
+      {/* Left Wing Gloss Highlight */}
+      <ellipse
+        cx="64"
+        cy="78"
+        rx="10"
+        ry="18"
+        transform="rotate(-12 64 78)"
+        fill="#FFFFFF"
+        fillOpacity="0.18"
+      />
+    </g>
+  </svg>
+);
+
+// 8. 3D Server Stack (3 stacked dark server blades with glowing blue LED indicators & white side cables)
+export const ServerStack3DIcon: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 104 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 160 160"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={`transition-transform ${className}`}
+  >
+    <Clay3DDefs idPrefix="srv3d" />
+    <g filter="url(#srv3d_3d_shadow)">
+      {/* Right Side White 3D Loop Cables */}
+      <path
+        d="M122 52 H134 C140 52, 140 80, 134 80 H122"
+        stroke="url(#srv3d_white_clay)"
         strokeWidth="7"
         strokeLinecap="round"
       />
-      {/* Inner Black Padlock Body */}
-      <rect x="51" y="76" width="42" height="36" rx="6" fill={CYBER_DARK} />
-      {/* White Keyhole */}
-      <circle cx="72" cy="90" r="4.5" fill="#FFFFFF" />
-      <path d="M72 93 V103" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" />
-
-      {/* Overlapping Red Checkmark Badge (Top Right) */}
-      <circle cx="114" cy="52" r="28" fill="#FFFFFF" />
-      <circle cx="114" cy="52" r="24" fill={CYBER_RED} />
       <path
-        d="M103 52 L111 60 L126 44"
-        stroke="#FFFFFF"
+        d="M122 80 H136 C142 80, 142 108, 136 108 H122"
+        stroke="url(#srv3d_white_clay)"
+        strokeWidth="7"
+        strokeLinecap="round"
+      />
+
+      {/* Left Side Connector Pins */}
+      <rect x="20" y="76" width="12" height="8" rx="4" fill="url(#srv3d_white_clay)" />
+
+      {/* 3 Stacked Server Blades */}
+      {[40, 68, 96].map((y, idx) => (
+        <g key={idx}>
+          {/* Blue Side Caps */}
+          <rect x="28" y={y + 3} width="100" height="20" rx="8" fill="url(#srv3d_blue_clay)" />
+          {/* Dark 3D Blade Chassis */}
+          <rect
+            x="34"
+            y={y}
+            width="86"
+            height="24"
+            rx="7"
+            fill="url(#srv3d_dark_matte)"
+            stroke="#52525B"
+            strokeWidth="1.5"
+          />
+          {/* 3 Glowing 3D Blue LED Dots */}
+          <circle cx="50" cy={y + 12} r="4.5" fill="url(#srv3d_blue_orb)" />
+          <circle cx="68" cy={y + 12} r="4.5" fill="url(#srv3d_blue_orb)" />
+          <circle cx="86" cy={y + 12} r="4.5" fill="url(#srv3d_blue_orb)" />
+          {/* Right Slot Port */}
+          <rect x="102" y={y + 9} width="10" height="6" rx="3" fill="#60A5FA" />
+        </g>
+      ))}
+
+      {/* Bottom White Glow Base Strip */}
+      <path d="M44 124 H112" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeOpacity="0.85" />
+    </g>
+  </svg>
+);
+
+// 9. 3D Phishing Hook (Glossy 3D blue J-hook suspended on a metallic dark wire)
+export const PhishingHook3DIcon: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 104 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 160 160"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={`transition-transform ${className}`}
+  >
+    <Clay3DDefs idPrefix="hook3d" />
+    <g filter="url(#hook3d_3d_shadow)">
+      {/* Top Fishing Line / Wire Strand */}
+      <line x1="98" y1="16" x2="96" y2="48" stroke="#A1A1AA" strokeWidth="3" strokeLinecap="round" />
+      <line x1="102" y1="20" x2="99" y2="48" stroke="#71717A" strokeWidth="2" strokeLinecap="round" />
+
+      {/* Hook Eye Ring (3D Blue & Dark Knot) */}
+      <circle
+        cx="96"
+        cy="54"
+        r="10"
+        stroke="url(#hook3d_blue_clay)"
+        strokeWidth="7"
+      />
+      <path
+        d="M90 46 C94 42, 102 44, 102 52"
+        stroke="#27272A"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+      />
+
+      {/* Main 3D Glossy Blue J-Hook Shaft & Curve */}
+      <path
+        d="M96 64 V110 C96 130, 82 140, 66 140 C50 140, 40 128, 42 112 C43 105, 48 100, 54 96"
+        stroke="url(#hook3d_blue_clay)"
+        strokeWidth="13"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Inner Barb Point */}
+      <path
+        d="M44 108 L56 95 L55 109"
+        fill="#60A5FA"
+      />
+      {/* 3D Specular Highlight along Hook Shaft */}
+      <path
+        d="M94 68 V108 C94 124, 82 134, 66 134"
+        stroke="#93C5FD"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeOpacity="0.75"
+      />
+    </g>
+  </svg>
+);
+
+// 10. 3D Secure Browser / App Window (Dark 3D body, blue top header bar with 3 white dots, white shield with blue checkmark)
+export const BrowserShield3DIcon: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 104 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 160 160"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={`transition-transform ${className}`}
+  >
+    <Clay3DDefs idPrefix="win3d" />
+    <g filter="url(#win3d_3d_shadow)">
+      {/* Main Lower Dark 3D Window Body */}
+      <rect
+        x="24"
+        y="32"
+        width="112"
+        height="96"
+        rx="22"
+        fill="url(#win3d_dark_matte)"
+        stroke="#52525B"
+        strokeWidth="2"
+      />
+
+      {/* Top 3D Blue Header Cap */}
+      <path
+        d="M24 54 C24 40, 34 32, 46 32 H114 C126 32, 136 40, 136 54 V62 H24 V54 Z"
+        fill="url(#win3d_blue_clay)"
+      />
+      {/* Top Header Specular Shine */}
+      <path d="M42 37 H118" stroke="#93C5FD" strokeWidth="2.5" strokeLinecap="round" strokeOpacity="0.65" />
+
+      {/* 3 White 3D Window Control Dots */}
+      <circle cx="42" cy="48" r="4.5" fill="url(#win3d_white_clay)" />
+      <circle cx="55" cy="48" r="4.5" fill="url(#win3d_white_clay)" />
+      <circle cx="68" cy="48" r="4.5" fill="url(#win3d_white_clay)" />
+
+      {/* 3D White Shield Centered on Dark Body */}
+      <path
+        d="M80 70 L60 77 V93 C60 107, 69 115, 80 120 C91 115, 100 107, 100 93 V77 L80 70 Z"
+        fill="url(#win3d_white_clay)"
+      />
+
+      {/* 3D Blue Checkmark Inside Shield */}
+      <path
+        d="M71 94 L77 100 L90 86"
+        stroke="url(#win3d_blue_clay)"
         strokeWidth="6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </g>
-  </svg>
-);
-
-// 5. Email Protection (Black Envelope + Letter + Red Lock with Checkmark)
-export const EmailProtectionObject: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 105 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 160 160"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`transition-transform ${className}`}
-  >
-    <CyberIconDefs idPrefix="emailProtection" />
-    <g filter="url(#emailProtection_glow)">
-      {/* White Letter Paper Rising from Envelope */}
-      <rect
-        x="40"
-        y="48"
-        width="80"
-        height="68"
-        rx="5"
-        fill="#FFFFFF"
-        stroke={CYBER_DARK}
-        strokeWidth="7"
-      />
-
-      {/* Red Padlock on Letter */}
-      <path
-        d="M68 48 V36 C68 24, 92 24, 92 36 V48"
-        stroke={CYBER_RED}
-        strokeWidth="7"
-        strokeLinecap="round"
-      />
-      <rect x="60" y="46" width="40" height="36" rx="6" fill={CYBER_RED} />
-      <path
-        d="M71 64 L78 71 L90 57"
-        stroke="#FFFFFF"
-        strokeWidth="5.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-
-      {/* Black Envelope Body */}
-      <path
-        d="M24 72 L80 108 L136 72 V128 C136 135, 131 140, 124 140 H36 C29 140, 24 135, 24 128 V72 Z"
-        fill={CYBER_DARK}
-      />
-      {/* Top Flaps of Open Envelope */}
-      <path
-        d="M24 72 L38 62 V82 Z M136 72 L122 62 V82 Z"
-        fill={CYBER_DARK}
-      />
-    </g>
-  </svg>
-);
-
-// 6. Cloud Security (Red Cloud + Black Lock + Bottom Circuit Nodes)
-export const CloudSecurityObject: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 105 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 160 160"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`transition-transform ${className}`}
-  >
-    <CyberIconDefs idPrefix="cloudSecurity" />
-    <g filter="url(#cloudSecurity_glow)">
-      {/* Red Cloud Body */}
-      <path
-        d="M42 108 C24 108, 14 96, 16 80 C18 66, 30 58, 40 58 C46 38, 66 28, 86 34 C102 38, 112 52, 114 64 C128 66, 138 78, 136 92 C134 102, 124 108, 110 108 H42 Z"
-        fill={CYBER_RED}
-      />
-      {/* White Cutout Arch at Cloud Base for Circuit Stems */}
-      <path
-        d="M52 109 C52 96, 100 96, 100 109 Z"
-        fill="#FFFFFF"
-      />
-
-      {/* Overlapping Black Lock (Top Right) */}
-      <rect x="95" y="47" width="44" height="42" rx="7" fill="#FFFFFF" />
-      <path
-        d="M106 49 V38 C106 28, 128 28, 128 38 V49"
-        stroke={CYBER_DARK}
-        strokeWidth="6.5"
-        strokeLinecap="round"
-      />
-      <rect x="98" y="49" width="38" height="36" rx="6" fill={CYBER_DARK} />
-      <path
-        d="M108 67 L115 74 L127 60"
-        stroke="#FFFFFF"
-        strokeWidth="5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-
-      {/* 3 Black Circuit Nodes Below Cloud */}
-      {/* Left Node */}
-      <path d="M64 104 V124 H44" stroke={CYBER_DARK} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="36" cy="124" r="7" fill="#FFFFFF" stroke={CYBER_DARK} strokeWidth="5.5" />
-      {/* Center Node */}
-      <path d="M76 104 V132" stroke={CYBER_DARK} strokeWidth="6" strokeLinecap="round" />
-      <circle cx="76" cy="140" r="7" fill="#FFFFFF" stroke={CYBER_DARK} strokeWidth="5.5" />
-      {/* Right Node */}
-      <path d="M88 104 V124 H108" stroke={CYBER_DARK} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="116" cy="124" r="7" fill="#FFFFFF" stroke={CYBER_DARK} strokeWidth="5.5" />
-    </g>
-  </svg>
-);
-
-// 7. Cyber Security Shield (Black Shield with Checkmark + 7 Red Circuit Nodes)
-export const CyberShieldCircuitObject: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 105 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 160 160"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`transition-transform ${className}`}
-  >
-    <CyberIconDefs idPrefix="cyberShieldCircuit" />
-    <g filter="url(#cyberShieldCircuit_glow)">
-      {/* Left Red Circuit Traces */}
-      <path d="M52 60 H36 V40" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="36" cy="32" r="7" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
-
-      <path d="M48 80 H28" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" />
-      <circle cx="20" cy="80" r="7" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
-
-      <path d="M54 98 H36 V118" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="36" cy="126" r="7" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
-
-      {/* Right Red Circuit Traces */}
-      <path d="M108 60 H124 V40" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="124" cy="32" r="7" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
-
-      <path d="M112 80 H132" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" />
-      <circle cx="140" cy="80" r="7" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
-
-      <path d="M106 98 H124 V118" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="124" cy="126" r="7" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
-
-      {/* Bottom Center Red Circuit Trace */}
-      <path d="M80 116 V134" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" />
-      <circle cx="80" cy="142" r="7" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
-
-      {/* Central Black Shield */}
-      <path
-        d="M80 42 L48 54 V80 C48 102, 64 114, 80 122 C96 114, 112 102, 112 80 V54 L80 42 Z"
-        fill={CYBER_DARK}
-      />
-      {/* White Checkmark */}
-      <path
-        d="M68 80 L76 89 L94 70"
-        stroke="#FFFFFF"
-        strokeWidth="6.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </g>
-  </svg>
-);
-
-// 8. Cyber Security Monitor (Monitor + Side Circuits + Red Lock on Top)
-export const CyberMonitorLockObject: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 105 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 160 160"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`transition-transform ${className}`}
-  >
-    <CyberIconDefs idPrefix="cyberMonitorLock" />
-    <g filter="url(#cyberMonitorLock_glow)">
-      {/* Left Side Circuit Nodes */}
-      <path d="M44 74 H32 L26 66" stroke={CYBER_SLATE} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="23" cy="62" r="4.5" fill="#FFFFFF" stroke={CYBER_SLATE} strokeWidth="3.5" />
-
-      <path d="M44 84 H24" stroke={CYBER_SLATE} strokeWidth="4" strokeLinecap="round" />
-      <circle cx="19" cy="84" r="4.5" fill="#FFFFFF" stroke={CYBER_SLATE} strokeWidth="3.5" />
-
-      <path d="M44 94 H28" stroke={CYBER_SLATE} strokeWidth="4" strokeLinecap="round" />
-      <circle cx="23" cy="94" r="4.5" fill="#FFFFFF" stroke={CYBER_SLATE} strokeWidth="3.5" />
-
-      <path d="M44 104 H32 L26 112" stroke={CYBER_SLATE} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="23" cy="116" r="4.5" fill="#FFFFFF" stroke={CYBER_SLATE} strokeWidth="3.5" />
-
-      {/* Right Side Circuit Nodes */}
-      <path d="M116 74 H128 L134 66" stroke={CYBER_SLATE} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="137" cy="62" r="4.5" fill="#FFFFFF" stroke={CYBER_SLATE} strokeWidth="3.5" />
-
-      <path d="M116 84 H136" stroke={CYBER_SLATE} strokeWidth="4" strokeLinecap="round" />
-      <circle cx="141" cy="84" r="4.5" fill="#FFFFFF" stroke={CYBER_SLATE} strokeWidth="3.5" />
-
-      <path d="M116 94 H132" stroke={CYBER_SLATE} strokeWidth="4" strokeLinecap="round" />
-      <circle cx="137" cy="94" r="4.5" fill="#FFFFFF" stroke={CYBER_SLATE} strokeWidth="3.5" />
-
-      <path d="M116 104 H128 L134 112" stroke={CYBER_SLATE} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="137" cy="116" r="4.5" fill="#FFFFFF" stroke={CYBER_SLATE} strokeWidth="3.5" />
-
-      {/* Monitor Frame */}
-      <rect x="42" y="60" width="76" height="56" rx="5" fill={CYBER_DARK} />
-      {/* White Screen Inside */}
-      <rect x="47" y="65" width="66" height="38" rx="2" fill="#FFFFFF" />
-      {/* Monitor Stand Neck & Base */}
-      <path d="M72 116 H88 L92 126 H68 L72 116 Z" fill={CYBER_DARK} />
-      <rect x="58" y="126" width="44" height="5" rx="2.5" fill={CYBER_DARK} />
-
-      {/* Top Red Padlock */}
-      <rect x="60" y="44" width="40" height="36" rx="6" fill="#FFFFFF" />
-      <path
-        d="M69 46 V35 C69 25, 91 25, 91 35 V46"
-        stroke={CYBER_RED}
-        strokeWidth="6.5"
-        strokeLinecap="round"
-      />
-      <rect x="62" y="46" width="36" height="32" rx="5" fill={CYBER_RED} />
-      <path
-        d="M72 62 L78 68 L89 56"
-        stroke="#FFFFFF"
-        strokeWidth="5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </g>
-  </svg>
-);
-
-// 9. Encryption (Black Horizontal Key + Red Circuit Traces)
-export const EncryptionKeyObject: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 105 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 160 160"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`transition-transform ${className}`}
-  >
-    <CyberIconDefs idPrefix="encryptionKey" />
-    <g filter="url(#encryptionKey_glow)">
-      {/* Upper Red Circuit Traces */}
-      <path d="M96 64 V38 H78" stroke={CYBER_RED} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="70" cy="38" r="8" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5.5" />
-
-      <path d="M114 64 V40" stroke={CYBER_RED} strokeWidth="6" strokeLinecap="round" />
-      <circle cx="114" cy="30" r="8" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5.5" />
-
-      {/* Lower Red Circuit Traces */}
-      <path d="M96 96 V122 H78" stroke={CYBER_RED} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="70" cy="122" r="8" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5.5" />
-
-      <path d="M114 96 V120" stroke={CYBER_RED} strokeWidth="6" strokeLinecap="round" />
-      <circle cx="114" cy="130" r="8" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5.5" />
-
-      {/* Black Key Blade */}
-      <path d="M74 68 H128 L140 80 L128 92 H74 V68 Z" fill={CYBER_DARK} />
-      {/* White Key Blade Groove */}
-      <line x1="78" y1="80" x2="124" y2="80" stroke="#FFFFFF" strokeWidth="4.5" strokeLinecap="round" />
-
-      {/* Black Key Bow (Head) */}
-      <circle cx="48" cy="80" r="28" fill={CYBER_DARK} />
-      <circle cx="48" cy="80" r="11" fill="#FFFFFF" />
-    </g>
-  </svg>
-);
-
-// 10. Technology (Left Black Half-Gear + Right Red Circuit Lines)
-export const TechnologyGearObject: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 105 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 160 160"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={`transition-transform ${className}`}
-  >
-    <CyberIconDefs idPrefix="techGear" />
-    <g filter="url(#techGear_glow)">
-      {/* Left Half Black Gear with Teeth */}
-      <path
-        d="M72 26 L62 26 L56 36 C51 38, 47 41, 43 45 L32 41 L24 52 L32 61 C30 66, 29 71, 29 76 L18 80 L18 92 L30 96 C31 101, 33 106, 36 110 L28 120 L38 130 L48 123 C52 126, 57 128, 62 130 L66 140 H76 V114 C56 114, 44 100, 44 82 C44 64, 56 50, 76 50 V26 Z"
-        fill={CYBER_DARK}
-      />
-
-      {/* Red Circuit Lines Extending Right */}
-      {/* Line 1 (Top) */}
-      <path d="M68 66 H112 L120 56 H130" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="137" cy="56" r="6.5" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
-
-      {/* Line 2 (Upper Mid) */}
-      <path d="M68 78 H134" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" />
-      <circle cx="142" cy="78" r="6.5" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
-
-      {/* Line 3 (Lower Mid) */}
-      <path d="M68 90 H116 L126 102" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="131" cy="108" r="6.5" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
-
-      {/* Line 4 (Bottom) */}
-      <path d="M68 102 H98 L106 114" stroke={CYBER_RED} strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="111" cy="120" r="6.5" fill="#FFFFFF" stroke={CYBER_RED} strokeWidth="5" />
     </g>
   </svg>
 );
@@ -557,13 +666,13 @@ export const FloatingPartyObjects: React.FC = () => {
       particleCount: 35,
       spread: 60,
       origin: { x: xRatio, y: yRatio },
-      colors: ['#E5322C', '#F05A28', '#00A191', '#F8FAFC', '#38BDF8'],
+      colors: ['#3B82F6', '#60A5FA', '#F8FAFC', '#00A191', '#F05A28'],
     });
   };
 
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-      {/* 1. TOP-LEFT: User Access */}
+      {/* 1. TOP-LEFT: 3D Cyber Bomb */}
       <motion.div
         className="absolute top-6 left-3 sm:top-10 sm:left-10 lg:left-20 pointer-events-auto cursor-pointer"
         animate={{
@@ -577,13 +686,13 @@ export const FloatingPartyObjects: React.FC = () => {
         }}
         whileHover={{ scale: 1.16, rotate: 8 }}
         whileTap={{ scale: 0.92 }}
-        onClick={() => handleObjectClick('user-access', 0.14, 0.18)}
-        title="User Access"
+        onClick={() => handleObjectClick('cyber-bomb', 0.14, 0.18)}
+        title="Threat Payload"
       >
-        <UserAccessObject size={96} />
+        <Bomb3DIcon size={102} />
       </motion.div>
 
-      {/* 2. TOP-RIGHT: Password */}
+      {/* 2. TOP-RIGHT: 3D Microchip Node */}
       <motion.div
         className="absolute top-6 right-3 sm:top-10 sm:right-10 lg:right-20 pointer-events-auto cursor-pointer"
         animate={{
@@ -598,13 +707,13 @@ export const FloatingPartyObjects: React.FC = () => {
         }}
         whileHover={{ scale: 1.16, rotate: -8 }}
         whileTap={{ scale: 0.92 }}
-        onClick={() => handleObjectClick('password', 0.86, 0.18)}
-        title="Password Security"
+        onClick={() => handleObjectClick('chip-node', 0.86, 0.18)}
+        title="Processor Core"
       >
-        <PasswordLockObject size={96} />
+        <ChipCircuit3DIcon size={102} />
       </motion.div>
 
-      {/* 3. UPPER-MID-LEFT: Fingerprint */}
+      {/* 3. UPPER-MID-LEFT: 3D Biometric Fingerprint */}
       <motion.div
         className="hidden md:block absolute top-[28%] left-6 lg:left-36 pointer-events-auto cursor-pointer"
         animate={{
@@ -619,13 +728,13 @@ export const FloatingPartyObjects: React.FC = () => {
         }}
         whileHover={{ scale: 1.16, rotate: -6 }}
         whileTap={{ scale: 0.92 }}
-        onClick={() => handleObjectClick('fingerprint', 0.18, 0.32)}
-        title="Biometric Fingerprint"
+        onClick={() => handleObjectClick('fingerprint-3d', 0.18, 0.32)}
+        title="Biometric Scanner"
       >
-        <FingerprintObject size={90} />
+        <Fingerprint3DIcon size={96} />
       </motion.div>
 
-      {/* 4. UPPER-MID-RIGHT: Security Shield */}
+      {/* 4. UPPER-MID-RIGHT: 3D Cloud Shield */}
       <motion.div
         className="hidden md:block absolute top-[28%] right-6 lg:right-36 pointer-events-auto cursor-pointer"
         animate={{
@@ -640,13 +749,13 @@ export const FloatingPartyObjects: React.FC = () => {
         }}
         whileHover={{ scale: 1.16, rotate: 8 }}
         whileTap={{ scale: 0.92 }}
-        onClick={() => handleObjectClick('security', 0.82, 0.32)}
-        title="Security Shield"
+        onClick={() => handleObjectClick('cloud-shield-3d', 0.82, 0.32)}
+        title="Cloud Security"
       >
-        <SecurityShieldObject size={92} />
+        <CloudShield3DIcon size={100} />
       </motion.div>
 
-      {/* 5. MID-LEFT: Email Protection */}
+      {/* 5. MID-LEFT: 3D Password Badge */}
       <motion.div
         className="hidden sm:block absolute top-[50%] left-4 lg:left-14 pointer-events-auto cursor-pointer"
         animate={{
@@ -661,13 +770,13 @@ export const FloatingPartyObjects: React.FC = () => {
         }}
         whileHover={{ scale: 1.16, rotate: -8 }}
         whileTap={{ scale: 0.92 }}
-        onClick={() => handleObjectClick('email-protection', 0.1, 0.52)}
-        title="Email Protection"
+        onClick={() => handleObjectClick('password-3d', 0.1, 0.52)}
+        title="Password Security"
       >
-        <EmailProtectionObject size={92} />
+        <PasswordPill3DIcon size={100} />
       </motion.div>
 
-      {/* 6. MID-RIGHT: Cloud Security */}
+      {/* 6. MID-RIGHT: 3D Phishing Hook */}
       <motion.div
         className="hidden sm:block absolute top-[50%] right-4 lg:right-14 pointer-events-auto cursor-pointer"
         animate={{
@@ -682,13 +791,13 @@ export const FloatingPartyObjects: React.FC = () => {
         }}
         whileHover={{ scale: 1.16, rotate: 8 }}
         whileTap={{ scale: 0.92 }}
-        onClick={() => handleObjectClick('cloud-security', 0.9, 0.52)}
-        title="Cloud Security"
+        onClick={() => handleObjectClick('phishing-hook-3d', 0.9, 0.52)}
+        title="Phishing Defense"
       >
-        <CloudSecurityObject size={96} />
+        <PhishingHook3DIcon size={98} />
       </motion.div>
 
-      {/* 7. LOWER-MID-LEFT: Encryption Key */}
+      {/* 7. LOWER-MID-LEFT: 3D Cyber Bug */}
       <motion.div
         className="hidden lg:block absolute bottom-[26%] left-32 pointer-events-auto cursor-pointer"
         animate={{
@@ -703,13 +812,13 @@ export const FloatingPartyObjects: React.FC = () => {
         }}
         whileHover={{ scale: 1.16, rotate: 10 }}
         whileTap={{ scale: 0.92 }}
-        onClick={() => handleObjectClick('encryption', 0.18, 0.72)}
-        title="Encryption"
+        onClick={() => handleObjectClick('cyber-bug-3d', 0.18, 0.72)}
+        title="Malware & Bug Detection"
       >
-        <EncryptionKeyObject size={90} />
+        <CyberBug3DIcon size={96} />
       </motion.div>
 
-      {/* 8. LOWER-MID-RIGHT: Technology Gear */}
+      {/* 8. LOWER-MID-RIGHT: 3D Server Stack */}
       <motion.div
         className="hidden lg:block absolute bottom-[26%] right-32 pointer-events-auto cursor-pointer"
         animate={{
@@ -724,13 +833,13 @@ export const FloatingPartyObjects: React.FC = () => {
         }}
         whileHover={{ scale: 1.16, rotate: -10 }}
         whileTap={{ scale: 0.92 }}
-        onClick={() => handleObjectClick('technology', 0.82, 0.72)}
-        title="Technology"
+        onClick={() => handleObjectClick('server-stack-3d', 0.82, 0.72)}
+        title="Data Infrastructure"
       >
-        <TechnologyGearObject size={90} />
+        <ServerStack3DIcon size={98} />
       </motion.div>
 
-      {/* 9. BOTTOM-LEFT: Cyber Security (Shield + Circuits) */}
+      {/* 9. BOTTOM-LEFT: 3D Cyber Globe Shield */}
       <motion.div
         className="absolute bottom-8 left-3 sm:bottom-10 sm:left-12 lg:left-20 pointer-events-auto cursor-pointer"
         animate={{
@@ -745,13 +854,13 @@ export const FloatingPartyObjects: React.FC = () => {
         }}
         whileHover={{ scale: 1.18, rotate: -10 }}
         whileTap={{ scale: 0.9 }}
-        onClick={() => handleObjectClick('cyber-shield', 0.14, 0.84)}
-        title="Cyber Security"
+        onClick={() => handleObjectClick('globe-shield-3d', 0.14, 0.84)}
+        title="Global Network Defense"
       >
-        <CyberShieldCircuitObject size={98} />
+        <GlobeShield3DIcon size={102} />
       </motion.div>
 
-      {/* 10. BOTTOM-RIGHT: Cyber Security (Monitor + Lock) */}
+      {/* 10. BOTTOM-RIGHT: 3D Secure Browser Shield */}
       <motion.div
         className="absolute bottom-8 right-3 sm:bottom-10 sm:right-12 lg:right-20 pointer-events-auto cursor-pointer"
         animate={{
@@ -766,31 +875,31 @@ export const FloatingPartyObjects: React.FC = () => {
         }}
         whileHover={{ scale: 1.18, rotate: 8 }}
         whileTap={{ scale: 0.92 }}
-        onClick={() => handleObjectClick('cyber-monitor', 0.86, 0.84)}
-        title="Cyber Security"
+        onClick={() => handleObjectClick('browser-shield-3d', 0.86, 0.84)}
+        title="Application Security"
       >
-        <CyberMonitorLockObject size={98} />
+        <BrowserShield3DIcon size={102} />
       </motion.div>
 
-      {/* Ambient Floating Cyber Nodes */}
+      {/* Ambient Floating 3D Blue/White Nodes */}
       <motion.div
-        className="absolute top-1/3 left-1/4 w-3 h-3 rounded-full border-2 border-[#E5322C] bg-slate-950 opacity-60"
-        animate={{ y: [0, -24, 0], opacity: [0.35, 0.75, 0.35] }}
+        className="absolute top-1/3 left-1/4 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-blue-300 via-blue-500 to-blue-800 shadow-lg shadow-blue-500/40 opacity-75"
+        animate={{ y: [0, -24, 0], opacity: [0.4, 0.85, 0.4] }}
         transition={{ repeat: Infinity, duration: 4.2, ease: 'easeInOut' }}
       />
       <motion.div
-        className="absolute top-1/4 right-1/3 w-3 h-3 rounded-full border-2 border-[#00A191] bg-slate-950 opacity-60"
-        animate={{ y: [0, -20, 0], opacity: [0.35, 0.75, 0.35] }}
+        className="absolute top-1/4 right-1/3 w-3 h-3 rounded-full bg-gradient-to-br from-white via-zinc-200 to-zinc-500 shadow-lg shadow-white/30 opacity-70"
+        animate={{ y: [0, -20, 0], opacity: [0.35, 0.8, 0.35] }}
         transition={{ repeat: Infinity, duration: 5.1, ease: 'easeInOut' }}
       />
       <motion.div
-        className="absolute bottom-1/3 left-1/3 w-3.5 h-3.5 rounded-full border-2 border-[#E5322C] bg-slate-950 opacity-50"
-        animate={{ y: [0, 18, 0], opacity: [0.3, 0.7, 0.3] }}
+        className="absolute bottom-1/3 left-1/3 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-blue-300 via-blue-500 to-blue-900 shadow-lg shadow-blue-500/40 opacity-65"
+        animate={{ y: [0, 18, 0], opacity: [0.35, 0.75, 0.35] }}
         transition={{ repeat: Infinity, duration: 4.8, ease: 'easeInOut' }}
       />
       <motion.div
-        className="absolute bottom-1/4 right-1/4 w-3 h-3 rounded-full border-2 border-slate-300 bg-slate-950 opacity-50"
-        animate={{ y: [0, -18, 0], opacity: [0.3, 0.65, 0.3] }}
+        className="absolute bottom-1/4 right-1/4 w-3 h-3 rounded-full bg-gradient-to-br from-white via-zinc-200 to-zinc-500 shadow-lg shadow-white/30 opacity-65"
+        animate={{ y: [0, -18, 0], opacity: [0.3, 0.7, 0.3] }}
         transition={{ repeat: Infinity, duration: 3.9, ease: 'easeInOut' }}
       />
     </div>

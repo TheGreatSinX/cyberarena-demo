@@ -7,9 +7,13 @@ import { QuizManager } from './QuizManager';
 import { QuizPreview } from './QuizPreview';
 import { ResultsView } from './ResultsView';
 import { AdminUsersView } from './AdminUsersView';
-import { AuditLogsView } from './AuditLogsView';
 import { ResetDatabaseModal } from './ResetDatabaseModal';
 import { WeeklyAdminView } from '../weekly/WeeklyAdminView';
+import {
+  SettingsView,
+  NavVisibilityConfig,
+  DEFAULT_NAV_VISIBILITY,
+} from './SettingsView';
 import {
   LayoutDashboard,
   Layers,
@@ -18,14 +22,12 @@ import {
   Users,
   ShieldCheck,
   Zap,
-  Sparkles,
   ArrowRight,
-  TrendingUp,
-  RotateCcw,
-  Trash2,
-  ShieldAlert,
   Mail,
+  Settings,
 } from 'lucide-react';
+
+const NAV_VISIBILITY_STORAGE_KEY = 'cyberarena_nav_visibility_v1';
 
 interface AdminDashboardProps {
   onStartLiveGame: (gameId: string) => void;
@@ -45,6 +47,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [activeHostGame, setActiveHostGame] = useState<Game | null>(null);
   const [previewQuizId, setPreviewQuizId] = useState<string | null>(null);
   const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [navVisibility, setNavVisibility] = useState<NavVisibilityConfig>(() => {
+    try {
+      const saved = localStorage.getItem(NAV_VISIBILITY_STORAGE_KEY);
+      if (saved) {
+        return { ...DEFAULT_NAV_VISIBILITY, ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.warn('Failed to load nav visibility config:', e);
+    }
+    return DEFAULT_NAV_VISIBILITY;
+  });
+
+  const handleUpdateNavVisibility = (updated: NavVisibilityConfig) => {
+    setNavVisibility(updated);
+    try {
+      localStorage.setItem(NAV_VISIBILITY_STORAGE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Failed to save nav visibility config:', e);
+    }
+  };
 
   // Sync initial tab if changed from navigation
   useEffect(() => {
@@ -119,29 +141,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Sub-header Navigation Tabs */}
       <div className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-14 sm:top-16 z-40">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-2">
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'dashboard'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4 shrink-0" />
-            <span>Dashboard</span>
-          </button>
+          {navVisibility.dashboard && (
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'dashboard'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4 shrink-0" />
+              <span>Dashboard</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveTab('quizzes')}
-            className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'quizzes'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <Layers className="w-4 h-4 shrink-0" />
-            <span>Quizzes</span>
-          </button>
+          {navVisibility.quizzes && (
+            <button
+              onClick={() => setActiveTab('quizzes')}
+              className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'quizzes'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Layers className="w-4 h-4 shrink-0" />
+              <span>Quizzes</span>
+            </button>
+          )}
 
           {activeHostGame && (
             <button
@@ -153,61 +179,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </button>
           )}
 
+          {navVisibility.results && (
+            <button
+              onClick={() => setActiveTab('results')}
+              className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'results'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4 shrink-0" />
+              <span>Results & CSV</span>
+            </button>
+          )}
+
+          {navVisibility.weekly && (
+            <button
+              onClick={() => setActiveTab('weekly')}
+              className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'weekly'
+                  ? 'bg-[#00A191] text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Mail className="w-4 h-4 shrink-0" />
+              <span>Weekly Awareness</span>
+            </button>
+          )}
+
+          {navVisibility.users && (
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'users'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Users className="w-4 h-4 shrink-0" />
+              <span>Administrators</span>
+            </button>
+          )}
+
           <button
-            onClick={() => setActiveTab('results')}
-            className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'results'
+            onClick={() => setActiveTab('settings')}
+            className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap sm:ml-auto shrink-0 ${
+              activeTab === 'settings'
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
-            <BarChart3 className="w-4 h-4 shrink-0" />
-            <span>Results & CSV</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('weekly')}
-            className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'weekly'
-                ? 'bg-[#00A191] text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <Mail className="w-4 h-4 shrink-0" />
-            <span>Weekly Awareness</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'users'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <Users className="w-4 h-4 shrink-0" />
-            <span>Administrators</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`min-h-[38px] flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === 'audit'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4 shrink-0" />
-            <span>Audit Logs</span>
-          </button>
-
-          <button
-            onClick={() => setResetModalOpen(true)}
-            title="Reset Database back to zero"
-            className="min-h-[38px] flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold bg-rose-500/10 text-rose-300 border border-rose-500/30 hover:bg-rose-500/20 hover:border-rose-500/50 transition-all cursor-pointer whitespace-nowrap sm:ml-auto shrink-0"
-          >
-            <RotateCcw className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>Reset Database</span>
+            <Settings className="w-4 h-4 shrink-0" />
+            <span>Settings</span>
           </button>
         </div>
       </div>
@@ -305,26 +328,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </p>
               </div>
             </div>
-
-            {/* System Danger Zone: Full Database Reset */}
-            <div className="p-6 rounded-3xl bg-slate-900/90 border border-rose-900/40 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <ShieldAlert className="w-5 h-5 text-rose-400" />
-                  <h3 className="font-bold text-white text-base">Reset Database & Return to Zero</h3>
-                </div>
-                <p className="text-xs text-slate-400 max-w-xl">
-                  Permanently wipe all quizzes, active game sessions, answers, and analytics to return the database back to zero. Requires typing confirmation before executing.
-                </p>
-              </div>
-              <button
-                onClick={() => setResetModalOpen(true)}
-                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-bold text-xs transition-all cursor-pointer shrink-0"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>Reset Database to Zero</span>
-              </button>
-            </div>
           </div>
         ) : activeTab === 'quizzes' ? (
           <QuizManager
@@ -338,7 +341,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         ) : activeTab === 'users' ? (
           <AdminUsersView />
         ) : (
-          <AuditLogsView />
+          <SettingsView
+            navVisibility={navVisibility}
+            onUpdateNavVisibility={handleUpdateNavVisibility}
+            onOpenResetModal={() => setResetModalOpen(true)}
+          />
         )}
       </div>
 

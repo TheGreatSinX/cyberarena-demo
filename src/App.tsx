@@ -18,8 +18,10 @@ interface PlayerSession {
   quizTitle: string;
   nickname: string;
   gamePin: string;
+  dueDate?: string | null;
   avatarId?: string;
   avatarUrl?: string;
+  alreadyCompleted?: boolean;
 }
 
 const AppContent: React.FC = () => {
