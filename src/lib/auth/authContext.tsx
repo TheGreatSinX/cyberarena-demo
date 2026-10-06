@@ -162,8 +162,62 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const loginWithEmailPassword = async (email: string, pass: string) => {
-    const cred = await signInWithEmailAndPassword(auth, email, pass);
-    await writeAuditEntry('LOGIN', 'auth', cred.user.uid, { email });
+    const cleanEmail = email.trim();
+    const isBootstrappedEmail = cleanEmail.toLowerCase() === 'webdev.cybernetics@gmail.com';
+
+    try {
+      const cred = await signInWithEmailAndPassword(auth, cleanEmail, pass);
+      await writeAuditEntry('LOGIN', 'auth', cred.user.uid, { email: cleanEmail });
+    } catch (err: any) {
+      const code = err?.code || '';
+      const msg = String(err?.message || '');
+
+      // If the bootstrapped Super Admin is signing in with email/password for the first time,
+      // automatically create their Email/Password credential if it doesn't exist yet
+      if (
+        isBootstrappedEmail &&
+        pass.length >= 6 &&
+        (code === 'auth/user-not-found' || code === 'auth/invalid-credential' || code === 'auth/invalid-login-credentials')
+      ) {
+        try {
+          const created = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
+          await writeAuditEntry('SUPER_ADMIN_BOOTSTRAPPED', 'auth', created.user.uid, { email: cleanEmail });
+          return;
+        } catch (createErr: any) {
+          // If email-already-in-use, the account exists in Firebase Auth (either with a different password or Google Sign-In only)
+          if (createErr?.code === 'auth/email-already-in-use') {
+            throw new Error(
+              'Incorrect password for webdev.cybernetics@gmail.com, or this account was originally signed in with Google. Click "Forgot password?" to set a password, or use "Sign In with Google".'
+            );
+          }
+        }
+      }
+
+      if (code === 'auth/operation-not-allowed' || msg.includes('OPERATION_NOT_ALLOWED')) {
+        throw new Error(
+          'Email/Password sign-in is disabled in Firebase Console. Enable Email/Password in Firebase Console → Authentication → Sign-in method.'
+        );
+      }
+
+      if (msg.includes(' API key ') || msg.includes('requests-from-referer') || code === 'auth/unauthorized-domain') {
+        throw new Error(
+          `Domain ${window.location.hostname} is not authorized in Firebase. Add "${window.location.hostname}" to Firebase Console → Authentication → Settings → Authorized domains (and check GCP API Key HTTP referrers).`
+        );
+      }
+
+      if (
+        code === 'auth/invalid-credential' ||
+        code === 'auth/invalid-login-credentials' ||
+        code === 'auth/wrong-password' ||
+        code === 'auth/user-not-found'
+      ) {
+        throw new Error(
+          'Invalid email or password. If you have not set a password yet, click "Forgot password?" below or use "Sign In with Google".'
+        );
+      }
+
+      throw err;
+    }
   };
 
   const signInWithGoogleAdmin = async () => {
