@@ -29,7 +29,7 @@ export const DEFAULT_NAV_VISIBILITY: NavVisibilityConfig = {
   dashboard: true,
   quizzes: true,
   results: true,
-  weekly: true,
+  weekly: false,
   users: true,
 };
 

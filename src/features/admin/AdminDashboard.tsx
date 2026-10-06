@@ -27,7 +27,7 @@ import {
   Settings,
 } from 'lucide-react';
 
-const NAV_VISIBILITY_STORAGE_KEY = 'cyberarena_nav_visibility_v1';
+const NAV_VISIBILITY_STORAGE_KEY = 'cyberarena_nav_visibility_v2';
 
 interface AdminDashboardProps {
   onStartLiveGame: (gameId: string) => void;

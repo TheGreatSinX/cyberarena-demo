@@ -25,12 +25,34 @@ interface PlayerSession {
 }
 
 const AppContent: React.FC = () => {
-  const { user, isMfaVerified } = useAuth();
-  const [currentView, setCurrentView] = useState<string>('landing');
+  const { user, isMfaVerified, loading: authLoading } = useAuth();
+  const [currentView, setCurrentView] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('cyberarena_active_view') || 'landing';
+    } catch {
+      return 'landing';
+    }
+  });
   const [playerSession, setPlayerSession] = useState<PlayerSession | null>(null);
   const [activeHostGameId, setActiveHostGameId] = useState<string | null>(null);
   const [adminInitialTab, setAdminInitialTab] = useState<string>('dashboard');
   const [weeklyParams, setWeeklyParams] = useState<{ questionnaireId: string; token: string | null } | null>(null);
+
+  // Save currentView to sessionStorage so refreshing stays on the same view
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('cyberarena_active_view', currentView);
+    } catch {
+      // ignore storage errors
+    }
+  }, [currentView]);
+
+  // Automatically return to landing or admin-login if admin is auto-logged out after 10 minutes of inactivity
+  useEffect(() => {
+    if (!authLoading && !user && (currentView === 'admin-dashboard' || currentView === 'admin-host')) {
+      setCurrentView('admin-login');
+    }
+  }, [authLoading, user, currentView]);
 
   // 1. Initial Firestore connection test as mandated by skill
   useEffect(() => {
@@ -89,6 +111,7 @@ const AppContent: React.FC = () => {
 
       const fullUrl = (window.location.pathname + window.location.hash + window.location.search).toLowerCase();
       if (fullUrl.includes('cyberadmin') || fullUrl.includes('cyber-admin')) {
+        if (authLoading) return;
         if (user && isMfaVerified) {
           setCurrentView('admin-dashboard');
         } else {
@@ -125,7 +148,7 @@ const AppContent: React.FC = () => {
       window.removeEventListener('hashchange', handleUrlRoute);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [user, isMfaVerified]);
+  }, [user, isMfaVerified, authLoading]);
 
   // Handle navigation
   const handleNavigate = (view: string) => {

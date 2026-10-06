@@ -44,6 +44,52 @@ const SUPER_ADMIN_HASHES = new Set([
 
 const AUTHORIZED_DOMAIN_HASH = 'a0baa7a25a96de25455f2d5a6b76a28b7e92122289b5dd5f59cf7e1267aa2db0';
 
+const ADMIN_IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes idle timeout
+const ADMIN_SESSION_STORAGE_KEY = 'cyberarena_admin_mfa_session_v1';
+
+interface StoredAdminSession {
+  uid: string;
+  mfaVerified: boolean;
+  lastActiveAt: number;
+}
+
+function getStoredAdminSession(uid: string): StoredAdminSession | null {
+  try {
+    const raw = localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredAdminSession;
+    if (parsed.uid !== uid || !parsed.mfaVerified) return null;
+    if (Date.now() - parsed.lastActiveAt > ADMIN_IDLE_TIMEOUT_MS) {
+      localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredAdminSession(uid: string) {
+  try {
+    const payload: StoredAdminSession = {
+      uid,
+      mfaVerified: true,
+      lastActiveAt: Date.now(),
+    };
+    localStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function clearStoredAdminSession() {
+  try {
+    localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
 async function sha256Hex(input: string): Promise<string> {
   const encoded = new TextEncoder().encode(input.trim().toLowerCase());
   const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
@@ -152,8 +198,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               setProfile(data);
               setCurrentMfaSecret(data.mfaSecret || null);
               if (data.mfaEnrolled && data.mfaSecret) {
-                setMfaChallengePending(true);
-                setIsMfaVerified(false);
+                const cachedSession = getStoredAdminSession(fbUser.uid);
+                if (cachedSession) {
+                  // Admin refreshed the browser within the 10-minute active window: keep them logged in
+                  saveStoredAdminSession(fbUser.uid);
+                  setMfaChallengePending(false);
+                  setIsMfaVerified(true);
+                } else {
+                  setMfaChallengePending(true);
+                  setIsMfaVerified(false);
+                }
               } else {
                 setMfaChallengePending(true); // Must enroll first
                 setIsMfaVerified(false);
@@ -184,6 +238,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         }
       } else {
+        clearStoredAdminSession();
         setProfile(null);
         setMfaChallengePending(false);
         setIsMfaVerified(false);
@@ -194,6 +249,46 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     return () => unsubscribe();
   }, []);
+
+  // 10-minute idle auto-logout watcher for authenticated & MFA-verified administrators
+  useEffect(() => {
+    if (!user || !isMfaVerified) return;
+
+    let lastWriteTime = Date.now();
+    saveStoredAdminSession(user.uid);
+
+    const recordActivity = () => {
+      const now = Date.now();
+      // Throttle localStorage writes to once every 5 seconds while active
+      if (now - lastWriteTime > 5000) {
+        lastWriteTime = now;
+        saveStoredAdminSession(user.uid);
+      }
+    };
+
+    const activityEvents = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    activityEvents.forEach((evt) => window.addEventListener(evt, recordActivity, { passive: true }));
+
+    const checkIdleInterval = setInterval(async () => {
+      const session = getStoredAdminSession(user.uid);
+      if (!session || Date.now() - session.lastActiveAt >= ADMIN_IDLE_TIMEOUT_MS) {
+        clearStoredAdminSession();
+        try {
+          await writeAuditEntry('IDLE_AUTO_LOGOUT', 'auth', user.uid);
+        } catch {
+          // ignore audit error on idle logout
+        }
+        await signOut(auth);
+        setIsMfaVerified(false);
+        setMfaChallengePending(false);
+      }
+    }, 15000);
+
+    return () => {
+      activityEvents.forEach((evt) => window.removeEventListener(evt, recordActivity));
+      clearInterval(checkIdleInterval);
+    };
+  }, [user, isMfaVerified]);
 
   const loginWithEmailPassword = async (email: string, pass: string) => {
     const cleanEmail = email.trim();
@@ -339,6 +434,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setCurrentMfaSecret(secret);
     setMfaChallengePending(false);
     setIsMfaVerified(true);
+    saveStoredAdminSession(user.uid);
 
     await writeAuditEntry('MFA_ENROLLED', 'auth', user.uid);
     return true;
@@ -362,6 +458,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     setMfaChallengePending(false);
     setIsMfaVerified(true);
+    saveStoredAdminSession(user.uid);
     await writeAuditEntry('MFA_VERIFIED', 'auth', user.uid);
     return true;
   };
@@ -371,6 +468,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
+    clearStoredAdminSession();
     if (user) {
       await writeAuditEntry('LOGOUT', 'auth', user.uid);
     }
