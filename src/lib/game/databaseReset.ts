@@ -67,6 +67,28 @@ export async function resetDatabaseToZero(
     onProgress?.({ step: `Deleted ${stats.deletedQuizzes} quizzes...`, ...stats });
   }
 
+  // 2b. Wipe all Weekly Questionnaires and their subcollections
+  onProgress?.({ step: 'Scanning and wiping weekly questionnaires...', ...stats });
+  try {
+    const weeklySnap = await getDocs(collection(db, 'weeklyQuestionnaires'));
+    for (const wDoc of weeklySnap.docs) {
+      const wId = wDoc.id;
+      for (const subName of ['invitations', 'submissions']) {
+        try {
+          const subSnap = await getDocs(collection(db, `weeklyQuestionnaires/${wId}/${subName}`));
+          for (const subDoc of subSnap.docs) {
+            await deleteDoc(subDoc.ref);
+          }
+        } catch (err) {
+          console.warn(`Error clearing ${subName} for weeklyQuestionnaire ${wId}:`, err);
+        }
+      }
+      await deleteDoc(doc(db, 'weeklyQuestionnaires', wId));
+    }
+  } catch (err) {
+    console.warn('Error clearing weekly questionnaires:', err);
+  }
+
   // 3. Clear previous audit logs
   onProgress?.({ step: 'Clearing audit logs history...', ...stats });
   try {
@@ -105,7 +127,7 @@ export async function resetDatabaseToZero(
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('quizarena_session_')) {
+      if (key && key.startsWith('quizarena_')) {
         keysToRemove.push(key);
       }
     }

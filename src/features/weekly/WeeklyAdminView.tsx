@@ -23,7 +23,6 @@ import {
 import {
   DEFAULT_WEEKLY_EMAIL_TEMPLATE,
   DEFAULT_EMAIL_BACKGROUND_URL,
-  SAMPLE_WEEKLY_QUESTIONS,
   generateWeeklyEmailHtml,
   interpolateTemplate,
   buildWeeklyQuestionnaireUrl,
@@ -265,42 +264,6 @@ export const WeeklyAdminView: React.FC = () => {
     };
   };
 
-  // Seed a ready-to-use Weekly Security Awareness Campaign in 1 click
-  const handleCreateSampleCampaign = async () => {
-    if (!user) return;
-    try {
-      setSaving(true);
-      const ref = doc(collection(db, 'weeklyQuestionnaires'));
-      const nowIso = new Date().toISOString();
-      const newCampaign: WeeklyQuestionnaire = {
-        id: ref.id,
-        title: 'Phishing, MFA & Credential Hygiene Assessment',
-        weekLabel: 'Week 1 • CSAM 2026',
-        description:
-          'Weekly employee security awareness check covering phishing email identification, MFA fatigue defense, password reuse risks, and physical tailgating.',
-        dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-        passingScorePercent: 80,
-        status: 'ACTIVE',
-        questions: SAMPLE_WEEKLY_QUESTIONS,
-        emailTemplate: DEFAULT_WEEKLY_EMAIL_TEMPLATE,
-        createdBy: user.uid,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
-      const { id: _ignore, ...docData } = newCampaign;
-      await setDoc(ref, docData);
-      await writeAuditEntry('WEEKLY_CAMPAIGN_CREATED', 'weeklyQuestionnaires', ref.id, {
-        title: newCampaign.title,
-      });
-      await fetchAllWeeklyData();
-      setSubTab('campaigns');
-    } catch (err) {
-      console.error('Error creating sample campaign:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   // Create or update a Weekly Questionnaire Campaign
   const handleSaveCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -324,8 +287,8 @@ export const WeeklyAdminView: React.FC = () => {
         });
         await writeAuditEntry('WEEKLY_CAMPAIGN_UPDATED', 'weeklyQuestionnaires', campaignForm.id);
       } else {
-        // Optionally import questions from an existing Quiz or use sample questions
-        let initialQuestions: WeeklyQuestion[] = SAMPLE_WEEKLY_QUESTIONS;
+        // Optionally import questions from an existing Quiz, otherwise start empty
+        let initialQuestions: WeeklyQuestion[] = [];
         if (campaignForm.importQuizId) {
           const qSnap = await getDocs(
             query(
@@ -656,17 +619,6 @@ export const WeeklyAdminView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {questionnaires.length === 0 && (
-            <button
-              onClick={handleCreateSampleCampaign}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-[#F05A28] hover:bg-[#ff6c3b] text-white shadow-lg shadow-[#F05A28]/30 cursor-pointer transition-all"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>Load Sample Weekly Campaign</span>
-            </button>
-          )}
-
           <button
             onClick={() => {
               setCampaignForm({
@@ -970,15 +922,8 @@ export const WeeklyAdminView: React.FC = () => {
               <div className="p-8 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-3">
                 <p className="text-sm font-bold text-white">No Weekly Questionnaires Yet</p>
                 <p className="text-xs text-slate-400">
-                  Load our 5-question sample cybersecurity awareness questionnaire or create a new one.
+                  Click "New Weekly Questionnaire" above to create a campaign and add your questions.
                 </p>
-                <button
-                  onClick={handleCreateSampleCampaign}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-[#F05A28] text-white cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Load Sample Weekly Campaign</span>
-                </button>
               </div>
             ) : (
               questionnaires.map((wq) => {
@@ -1916,7 +1861,7 @@ export const WeeklyAdminView: React.FC = () => {
                     }
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs outline-none focus:border-[#00A191]"
                   >
-                    <option value="">Default 5 Security Awareness Questions</option>
+                    <option value="">Start with Blank Questionnaire (Add Questions Manually)</option>
                     {existingQuizzes.map((qz) => (
                       <option key={qz.id} value={qz.id}>
                         Import from Quiz: {qz.title} ({qz.questionCount || 0} Qs)

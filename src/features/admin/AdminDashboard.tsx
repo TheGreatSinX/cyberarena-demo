@@ -9,6 +9,7 @@ import { ResultsView } from './ResultsView';
 import { AdminUsersView } from './AdminUsersView';
 import { ResetDatabaseModal } from './ResetDatabaseModal';
 import { WeeklyAdminView } from '../weekly/WeeklyAdminView';
+import { purgeLegacyMockDataFromDatabase } from '../../lib/game/gameEngine';
 import {
   SettingsView,
   NavVisibilityConfig,
@@ -107,6 +108,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchMetrics = async () => {
     try {
+      await purgeLegacyMockDataFromDatabase();
       const qSnap = await getDocs(collection(db, 'quizzes'));
       const totalQ = qSnap.size;
       const pubQ = qSnap.docs.filter((d) => d.data().status === 'PUBLISHED').length;

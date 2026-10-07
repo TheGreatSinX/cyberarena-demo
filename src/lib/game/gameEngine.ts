@@ -5,11 +5,10 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   orderBy,
-  runTransaction,
-  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import {
@@ -21,8 +20,127 @@ import {
   AnswerSubmission,
   GameResult,
 } from '../../types';
-import { SEED_QUIZ_TITLE, SEED_QUIZ_DESCRIPTION, SEED_QUIZ_CATEGORY, SEED_QUESTIONS } from '../seed/seedData';
 import { handleFirestoreError, OperationType } from '../firebase/errors';
+
+// Legacy mock question texts that were previously auto-seeded into quizzes/games
+const LEGACY_MOCK_QUESTION_TEXTS = new Set([
+  'Which ocean trench is the deepest known location on Earth?',
+  "What element makes up approximately 78% of the Earth's atmosphere?",
+  "Who is widely credited with writing the first computer algorithm, intended for Babbage's Analytical Engine?",
+  'Which ancient Mediterranean city was famous for the Library of Alexandria and Pharos Lighthouse?',
+  'True or False: Sound travels faster in water than in air.',
+  'What protocol translates human-readable domain names into IP addresses?',
+  'Which celestial body in our solar system has the highest mountain and volcano (Olympus Mons)?',
+  'In which year did the Apollo 11 mission successfully land the first humans on the Moon?',
+  'What organelle produces the majority of chemical energy (ATP) in eukaryotic cells?',
+  'True or False: The World Wide Web and the Internet are the exact same entity.',
+]);
+
+const LEGACY_MOCK_QUIZ_TITLES = new Set([
+  'General Knowledge Challenge',
+]);
+
+export function isLegacyMockQuestion(questionText?: string | null): boolean {
+  if (!questionText) return false;
+  return LEGACY_MOCK_QUESTION_TEXTS.has(questionText.trim());
+}
+
+/**
+ * Purges any legacy mock quizzes ("General Knowledge Challenge") and any auto-seeded
+ * mock questions that were previously injected into admin-created quizzes or active game sessions.
+ */
+export async function purgeLegacyMockDataFromDatabase(): Promise<void> {
+  try {
+    const quizzesSnap = await getDocs(collection(db, 'quizzes'));
+    for (const qDoc of quizzesSnap.docs) {
+      const qData = qDoc.data() as Quiz;
+      const quizId = qDoc.id;
+
+      // If this entire quiz is the legacy mock "General Knowledge Challenge", delete it and its games
+      if (LEGACY_MOCK_QUIZ_TITLES.has((qData.title || '').trim())) {
+        const subQSnap = await getDocs(collection(db, `quizzes/${quizId}/questions`));
+        for (const sq of subQSnap.docs) {
+          await deleteDoc(sq.ref);
+        }
+        await deleteDoc(qDoc.ref);
+        continue;
+      }
+
+      // Otherwise, inspect this quiz's questions and remove any auto-seeded mock questions
+      const questionsSnap = await getDocs(collection(db, `quizzes/${quizId}/questions`));
+      let removedAny = false;
+      let remainingCount = 0;
+
+      for (const questionDoc of questionsSnap.docs) {
+        const questionData = questionDoc.data() as Question;
+        if (isLegacyMockQuestion(questionData.questionText)) {
+          await deleteDoc(questionDoc.ref);
+          removedAny = true;
+        } else {
+          remainingCount++;
+        }
+      }
+
+      if (removedAny) {
+        await updateDoc(qDoc.ref, {
+          questionCount: remainingCount,
+          updatedAt: new Date().toISOString(),
+        });
+
+        // Re-sync the PIN session so the game snapshot only has the real questions
+        if (qData.gamePin) {
+          await syncQuizPinSession(
+            quizId,
+            qData.createdBy || 'admin',
+            qData.gamePin,
+            qData.dueDate || null
+          );
+        }
+      }
+    }
+
+    // Also clean any standalone games whose title is the legacy mock quiz or that contain legacy mock questions
+    const gamesSnap = await getDocs(collection(db, 'games'));
+    for (const gDoc of gamesSnap.docs) {
+      const gData = gDoc.data() as Game;
+      const gameId = gDoc.id;
+
+      if (LEGACY_MOCK_QUIZ_TITLES.has((gData.quizTitle || '').trim())) {
+        const subcollections = ['questions', 'players', 'answers', 'results', 'privateQuestions'];
+        for (const subName of subcollections) {
+          const subSnap = await getDocs(collection(db, `games/${gameId}/${subName}`));
+          for (const subDoc of subSnap.docs) {
+            await deleteDoc(subDoc.ref);
+          }
+        }
+        await deleteDoc(gDoc.ref);
+        continue;
+      }
+
+      const gQuestionsSnap = await getDocs(collection(db, `games/${gameId}/questions`));
+      let removedGameMock = false;
+      let validRemaining = 0;
+      for (const gqDoc of gQuestionsSnap.docs) {
+        const gqData = gqDoc.data();
+        if (isLegacyMockQuestion(gqData.questionText)) {
+          await deleteDoc(gqDoc.ref);
+          await deleteDoc(doc(db, `games/${gameId}/privateQuestions`, gqDoc.id));
+          removedGameMock = true;
+        } else {
+          validRemaining++;
+        }
+      }
+
+      if (removedGameMock) {
+        await updateDoc(gDoc.ref, {
+          totalQuestions: validRemaining,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Completed check for legacy mock data:', err);
+  }
+}
 
 export function generateCryptoPin(): string {
   // Cryptographically random 6-digit PIN
@@ -40,81 +158,10 @@ export function isPastDueDate(dueDate?: string | null): boolean {
   return Date.now() > endOfDay.getTime();
 }
 
-export async function seedDefaultQuizIfNone(userId: string): Promise<string | null> {
-  try {
-    const qSnap = await getDocs(collection(db, 'quizzes'));
-    if (!qSnap.empty) {
-      // Check if existing quiz has questions
-      for (const qDoc of qSnap.docs) {
-        const subSnap = await getDocs(collection(db, `quizzes/${qDoc.id}/questions`));
-        if (!subSnap.empty) {
-          return qDoc.id;
-        }
-      }
-
-      // Existing quiz has 0 questions; populate it with SEED_QUESTIONS
-      const targetQuizId = qSnap.docs[0].id;
-      for (const q of SEED_QUESTIONS) {
-        const qRef = doc(collection(db, `quizzes/${targetQuizId}/questions`));
-        await setDoc(qRef, {
-          ...q,
-          quizId: targetQuizId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-      }
-
-      await updateDoc(doc(db, 'quizzes', targetQuizId), {
-        questionCount: SEED_QUESTIONS.length,
-        status: 'PUBLISHED',
-        updatedAt: new Date().toISOString(),
-      });
-
-      return targetQuizId;
-    }
-
-    const quizRef = doc(collection(db, 'quizzes'));
-    const quizId = quizRef.id;
-    const defaultPin = generateCryptoPin();
-    const defaultDueDate = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
-
-    await setDoc(quizRef, {
-      title: SEED_QUIZ_TITLE,
-      description: SEED_QUIZ_DESCRIPTION,
-      coverImageUrl: null,
-      category: SEED_QUIZ_CATEGORY,
-      status: 'PUBLISHED',
-      questionCount: SEED_QUESTIONS.length,
-      gamePin: defaultPin,
-      dueDate: defaultDueDate,
-      createdBy: userId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-
-    for (const q of SEED_QUESTIONS) {
-      const qRef = doc(collection(db, `quizzes/${quizId}/questions`));
-      await setDoc(qRef, {
-        ...q,
-        quizId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-    }
-
-    await syncQuizPinSession(quizId, userId, defaultPin, defaultDueDate);
-
-    return quizId;
-  } catch (err) {
-    console.error('Error seeding quiz:', err);
-    return null;
-  }
-}
-
 /**
  * Generates/saves a reusable 6-digit PIN and optional Due Date for a Quiz,
- * and syncs a persistent self-paced Game session so participants can enter the PIN
- * and answer questions continuously anytime before the due date.
+ * and strictly syncs the exact questions belonging to that Quiz into the Game session.
+ * Never injects mock or sample questions.
  */
 export async function syncQuizPinSession(
   quizId: string,
@@ -130,22 +177,18 @@ export async function syncQuizPinSession(
     }
     const quizData = quizDoc.data() as Quiz;
 
-    // Fetch quiz questions
+    // Fetch strictly the current quiz's questions (filtering out any legacy mock questions if present)
     const qQuery = query(collection(db, `quizzes/${quizId}/questions`), orderBy('sortOrder', 'asc'));
-    let qSnap = await getDocs(qQuery);
+    const rawQSnap = await getDocs(qQuery);
 
-    // If quiz is empty, auto-populate sample questions so PIN works immediately
-    if (qSnap.empty) {
-      for (const q of SEED_QUESTIONS) {
-        const qRef = doc(collection(db, `quizzes/${quizId}/questions`));
-        await setDoc(qRef, {
-          ...q,
-          quizId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
+    const validQuestionDocs = [];
+    for (const d of rawQSnap.docs) {
+      const qData = d.data() as Question;
+      if (isLegacyMockQuestion(qData.questionText)) {
+        await deleteDoc(d.ref);
+      } else {
+        validQuestionDocs.push(d);
       }
-      qSnap = await getDocs(qQuery);
     }
 
     const finalPin = (customPin || quizData.gamePin || generateCryptoPin()).trim();
@@ -154,6 +197,16 @@ export async function syncQuizPinSession(
     // Check if an active game already exists for this quiz
     let gameId = quizData.activeGameId || '';
     let existingGameSnap = gameId ? await getDoc(doc(db, 'games', gameId)) : null;
+
+    // Verify existingGameSnap actually belongs to this quizId
+    if (
+      existingGameSnap &&
+      existingGameSnap.exists() &&
+      existingGameSnap.data()?.quizId !== quizId
+    ) {
+      existingGameSnap = null;
+      gameId = '';
+    }
 
     if (!existingGameSnap || !existingGameSnap.exists()) {
       const pinGamesQ = query(collection(db, 'games'), where('gamePin', '==', finalPin));
@@ -165,18 +218,19 @@ export async function syncQuizPinSession(
       }
     }
 
-    const firstQuestionDoc = qSnap.docs[0];
+    const firstQuestionDoc = validQuestionDocs[0];
     const nowIso = new Date().toISOString();
 
     if (existingGameSnap && existingGameSnap.exists()) {
       const gameRef = doc(db, 'games', gameId);
       await updateDoc(gameRef, {
+        quizId,
         quizTitle: quizData.title,
         gamePin: finalPin,
         dueDate: finalDueDate,
         mode: 'SELF_PACED',
         status: 'QUESTION_ACTIVE',
-        totalQuestions: qSnap.size,
+        totalQuestions: validQuestionDocs.length,
         currentQuestionId: firstQuestionDoc?.id || null,
       });
     } else {
@@ -191,7 +245,7 @@ export async function syncQuizPinSession(
         status: 'QUESTION_ACTIVE',
         currentQuestionIndex: 0,
         currentQuestionId: firstQuestionDoc?.id || null,
-        totalQuestions: qSnap.size,
+        totalQuestions: validQuestionDocs.length,
         playerCount: 0,
         questionStartedAt: Date.now(),
         questionEndsAt: null,
@@ -202,9 +256,25 @@ export async function syncQuizPinSession(
       });
     }
 
-    // Sync public and private question snapshots
-    for (let i = 0; i < qSnap.docs.length; i++) {
-      const qDoc = qSnap.docs[i];
+    // Remove any stale or old question documents in games/{gameId}/questions and privateQuestions
+    // that are NOT part of the current quiz's validQuestionDocs
+    const validIds = new Set(validQuestionDocs.map((d) => d.id));
+    const existingPublicQSnap = await getDocs(collection(db, `games/${gameId}/questions`));
+    for (const oldDoc of existingPublicQSnap.docs) {
+      if (!validIds.has(oldDoc.id)) {
+        await deleteDoc(oldDoc.ref);
+      }
+    }
+    const existingPrivateQSnap = await getDocs(collection(db, `games/${gameId}/privateQuestions`));
+    for (const oldPrivDoc of existingPrivateQSnap.docs) {
+      if (!validIds.has(oldPrivDoc.id)) {
+        await deleteDoc(oldPrivDoc.ref);
+      }
+    }
+
+    // Sync public and private question snapshots strictly from the current quiz's questions
+    for (let i = 0; i < validQuestionDocs.length; i++) {
+      const qDoc = validQuestionDocs[i];
       const qData = qDoc.data() as Question;
 
       const publicQRef = doc(db, `games/${gameId}/questions`, qDoc.id);
@@ -236,8 +306,7 @@ export async function syncQuizPinSession(
       gamePin: finalPin,
       dueDate: finalDueDate,
       activeGameId: gameId,
-      questionCount: qSnap.size,
-      status: 'PUBLISHED',
+      questionCount: validQuestionDocs.length,
       updatedAt: nowIso,
     });
 
@@ -274,42 +343,63 @@ export async function joinGameSession(
   }
 
   const cleanPin = gamePin.trim();
-  const pinQuery = query(collection(db, 'games'), where('gamePin', '==', cleanPin));
-  const pinSnap = await getDocs(pinQuery);
+
+  // First check the authoritative Quiz with this current gamePin so we always load the exact current quiz for this PIN
+  const quizPinQuery = query(collection(db, 'quizzes'), where('gamePin', '==', cleanPin));
+  const quizPinSnap = await getDocs(quizPinQuery);
 
   let gameId = '';
   let gameData: Game | null = null;
 
-  if (!pinSnap.empty) {
-    // Prefer the most recently created session matching this PIN
-    const sortedDocs = [...pinSnap.docs].sort((a, b) =>
-      (b.data().createdAt || '').localeCompare(a.data().createdAt || '')
-    );
-    const chosenDoc = sortedDocs[0];
-    gameId = chosenDoc.id;
-    gameData = chosenDoc.data() as Game;
-  } else {
-    // Fallback: Check if a Quiz has this saved gamePin
-    const quizPinQuery = query(collection(db, 'quizzes'), where('gamePin', '==', cleanPin));
-    const quizPinSnap = await getDocs(quizPinQuery);
-    if (quizPinSnap.empty) {
-      throw new Error('PIN not found. Please verify the 6-digit PIN from your Administrator.');
+  if (!quizPinSnap.empty) {
+    // Prefer published quizzes or most recently updated quiz matching this PIN
+    const sortedQuizzes = [...quizPinSnap.docs].sort((a, b) => {
+      const aPub = a.data().status === 'PUBLISHED' ? 1 : 0;
+      const bPub = b.data().status === 'PUBLISHED' ? 1 : 0;
+      if (aPub !== bPub) return bPub - aPub;
+      return (b.data().updatedAt || '').localeCompare(a.data().updatedAt || '');
+    });
+
+    const targetQuizDoc = sortedQuizzes[0];
+    const targetQuiz = targetQuizDoc.data() as Quiz;
+
+    if (targetQuiz.status !== 'PUBLISHED') {
+      throw new Error('This quiz is currently in Draft/Archived status and is not accepting participants yet.');
     }
-    const quizDoc = quizPinSnap.docs[0];
-    const quizData = quizDoc.data() as Quiz;
+
+    // Sync the quiz session to guarantee the game's questions strictly match the current quiz's questions
     const synced = await syncQuizPinSession(
-      quizDoc.id,
-      quizData.createdBy || 'admin',
+      targetQuizDoc.id,
+      targetQuiz.createdBy || 'admin',
       cleanPin,
-      quizData.dueDate || null
+      targetQuiz.dueDate || null
     );
     gameId = synced.gameId;
     const freshGameSnap = await getDoc(doc(db, 'games', gameId));
-    gameData = freshGameSnap.data() as Game;
+    if (freshGameSnap.exists()) {
+      gameData = freshGameSnap.data() as Game;
+    }
+  } else {
+    // Fallback: Check if a standalone live game session exists with this PIN
+    const pinQuery = query(collection(db, 'games'), where('gamePin', '==', cleanPin));
+    const pinSnap = await getDocs(pinQuery);
+
+    if (!pinSnap.empty) {
+      const sortedDocs = [...pinSnap.docs].sort((a, b) =>
+        (b.data().createdAt || '').localeCompare(a.data().createdAt || '')
+      );
+      const chosenDoc = sortedDocs[0];
+      gameId = chosenDoc.id;
+      gameData = chosenDoc.data() as Game;
+    }
   }
 
-  if (!gameData) {
-    throw new Error('Game session not found. Please verify the 6-digit PIN.');
+  if (!gameData || !gameId) {
+    throw new Error('PIN not found. Please verify the 6-digit PIN from your Administrator.');
+  }
+
+  if ((gameData.totalQuestions || 0) === 0) {
+    throw new Error('This quiz does not have any published questions yet. Please contact your Administrator.');
   }
 
   // Also check the parent quiz's dueDate if present

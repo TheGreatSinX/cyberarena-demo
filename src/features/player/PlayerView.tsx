@@ -7,6 +7,7 @@ import {
   submitPlayerAnswer,
   completePlayerSelfPacedSession,
   isPastDueDate,
+  isLegacyMockQuestion,
 } from '../../lib/game/gameEngine';
 import { soundManager } from '../../lib/sound/soundManager';
 import { getAvatarById } from '../../lib/avatars/avatarsCatalog';
@@ -133,34 +134,29 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
     return () => unsub();
   }, [gameId]);
 
-  // 2. Load all questions and check if participant already completed or answered questions
+  // 2. Load strictly the current quiz's questions for this PIN and check if participant already completed
   useEffect(() => {
     const loadQuestions = async () => {
       try {
         setLoadingQuestions(true);
-        const qSnap = await getDocs(
-          query(collection(db, `games/${gameId}/questions`), orderBy('sortOrder', 'asc'))
-        );
-
         let loadedList: GameQuestionSnapshot[] = [];
 
-        if (!qSnap.empty) {
-          loadedList = qSnap.docs.map(
-            (d) => ({ id: d.id, ...d.data() } as GameQuestionSnapshot)
-          );
-        } else {
-          // Fallback: load from parent quiz if game questions subcollection was empty
-          const gDoc = await getDoc(doc(db, 'games', gameId));
-          if (gDoc.exists()) {
-            const gData = gDoc.data() as Game;
-            if (gData.quizId) {
-              const origSnap = await getDocs(
-                query(
-                  collection(db, `quizzes/${gData.quizId}/questions`),
-                  orderBy('sortOrder', 'asc')
-                )
-              );
-              loadedList = origSnap.docs.map((d, i) => {
+        // Check parent quiz first so we strictly load the current quiz's live questions for this PIN
+        const gDoc = await getDoc(doc(db, 'games', gameId));
+        if (gDoc.exists()) {
+          const gData = gDoc.data() as Game;
+          if (gData.quizId) {
+            const origSnap = await getDocs(
+              query(
+                collection(db, `quizzes/${gData.quizId}/questions`),
+                orderBy('sortOrder', 'asc')
+              )
+            );
+            const validQuizQuestions = origSnap.docs.filter(
+              (d) => !isLegacyMockQuestion((d.data() as Question).questionText)
+            );
+            if (validQuizQuestions.length > 0) {
+              loadedList = validQuizQuestions.map((d, i) => {
                 const q = d.data() as Question;
                 return {
                   id: d.id,
@@ -170,12 +166,22 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
                   explanation: q.explanation || null,
                   timeLimitSeconds: q.timeLimitSeconds || 20,
                   points: q.points || 1000,
-                  sortOrder: q.sortOrder || i + 1,
+                  sortOrder: i + 1,
                   options: q.options || [],
                 };
               });
             }
           }
+        }
+
+        // Fallback to games/{gameId}/questions if parent quiz was not directly readable
+        if (loadedList.length === 0) {
+          const qSnap = await getDocs(
+            query(collection(db, `games/${gameId}/questions`), orderBy('sortOrder', 'asc'))
+          );
+          loadedList = qSnap.docs
+            .map((d) => ({ id: d.id, ...d.data() } as GameQuestionSnapshot))
+            .filter((q) => !isLegacyMockQuestion(q.questionText));
         }
 
         setAllQuestions(loadedList);

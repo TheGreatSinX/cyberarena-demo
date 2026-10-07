@@ -15,11 +15,11 @@ import { useAuth } from '../../lib/auth/authContext';
 import { Quiz, Question, QuestionOption, QuizStatus, QuestionType } from '../../types';
 import {
   createGameSession,
-  seedDefaultQuizIfNone,
   generateCryptoPin,
   syncQuizPinSession,
+  purgeLegacyMockDataFromDatabase,
+  isLegacyMockQuestion,
 } from '../../lib/game/gameEngine';
-import { SEED_QUESTIONS } from '../../lib/seed/seedData';
 import { processUploadedQuestionImage } from '../../lib/utils/imageUpload';
 import QRCode from 'qrcode';
 import {
@@ -197,6 +197,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
   const fetchQuizzes = async () => {
     try {
       setLoading(true);
+      await purgeLegacyMockDataFromDatabase();
       const qSnap = await getDocs(collection(db, 'quizzes'));
       const list = qSnap.docs.map((d) => {
         const data = d.data();
@@ -221,13 +222,18 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
     try {
       const qQuery = query(collection(db, `quizzes/${quizId}/questions`), orderBy('sortOrder', 'asc'));
       const snap = await getDocs(qQuery);
-      const list = snap.docs.map((d) => {
-        const data = d.data();
-        return {
-          ...data,
-          id: d.id, // Always preserve the question document ID
-        } as Question;
-      });
+      const list: Question[] = [];
+      for (const d of snap.docs) {
+        const data = d.data() as Question;
+        if (isLegacyMockQuestion(data.questionText)) {
+          await deleteDoc(d.ref);
+        } else {
+          list.push({
+            ...data,
+            id: d.id, // Always preserve the question document ID
+          });
+        }
+      }
       setQuestions(list);
     } catch (err) {
       console.error('Error fetching questions:', err);
@@ -404,6 +410,14 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
         status: nextStatus,
         updatedAt: new Date().toISOString(),
       });
+      if (nextStatus === 'PUBLISHED' && user) {
+        await syncQuizPinSession(
+          quiz.id,
+          user.uid,
+          quiz.gamePin || generateCryptoPin(),
+          quiz.dueDate || null
+        );
+      }
       await writeAuditEntry('QUIZ_PUBLISHED', 'quizzes', quiz.id, { status: nextStatus });
       await fetchQuizzes();
       if (selectedQuiz?.id === quiz.id) {
@@ -460,47 +474,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
       await writeAuditEntry('GAME_CREATED', 'games', gameId, { quizTitle: quiz.title });
       onStartLiveGame(gameId);
     } catch (err: any) {
-      alert(err?.message || 'Failed to start game session');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleLoadSampleQuestions = async (quizId: string) => {
-    if (!user) return;
-    try {
-      setActionLoading(true);
-      for (const q of SEED_QUESTIONS) {
-        const qRef = doc(collection(db, `quizzes/${quizId}/questions`));
-        await setDoc(qRef, {
-          ...q,
-          quizId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-      }
-      await updateDoc(doc(db, 'quizzes', quizId), {
-        questionCount: SEED_QUESTIONS.length,
-        status: 'PUBLISHED',
-        updatedAt: new Date().toISOString(),
-      });
-      await fetchQuestions(quizId);
-      await fetchQuizzes();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleSeedQuiz = async () => {
-    if (!user) return;
-    try {
-      setActionLoading(true);
-      await seedDefaultQuizIfNone(user.uid);
-      await fetchQuizzes();
-    } catch (err) {
-      console.error(err);
+      console.error('Failed to start game session:', err);
     } finally {
       setActionLoading(false);
     }
@@ -569,6 +543,14 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
       await updateDoc(doc(db, 'quizzes', selectedQuiz.id), {
         questionCount: countSnap.size,
       });
+      if (user && (selectedQuiz.gamePin || pinInput)) {
+        await syncQuizPinSession(
+          selectedQuiz.id,
+          user.uid,
+          selectedQuiz.gamePin || pinInput,
+          selectedQuiz.dueDate || dueDateInput || null
+        );
+      }
       await fetchQuizzes();
     } catch (err) {
       console.error('Error deleting question:', err);
@@ -595,6 +577,14 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
         sortOrder: i + 1,
       });
     }
+    if (user && (selectedQuiz.gamePin || pinInput)) {
+      await syncQuizPinSession(
+        selectedQuiz.id,
+        user.uid,
+        selectedQuiz.gamePin || pinInput,
+        selectedQuiz.dueDate || dueDateInput || null
+      );
+    }
   };
 
   return (
@@ -607,17 +597,6 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
         </div>
 
         <div className="flex items-center gap-3">
-          {quizzes.length === 0 && (
-            <button
-              onClick={handleSeedQuiz}
-              disabled={actionLoading}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 transition-colors cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <span>Load 10-Question Demo</span>
-            </button>
-          )}
-
           <button
             onClick={handleOpenCreateQuiz}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-[#00A191] hover:bg-[#00bda9] text-white shadow-lg shadow-[#00A191]/30 transition-all cursor-pointer"
@@ -645,7 +624,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
             <div className="p-8 rounded-2xl bg-slate-900 border border-slate-800 text-center">
               <HelpCircle className="w-8 h-8 text-slate-500 mx-auto mb-2" />
               <p className="text-sm font-bold text-slate-300 mb-1">No Quizzes Created</p>
-              <p className="text-xs text-slate-500 mb-4">Click "Create New Quiz" or load the seed challenge.</p>
+              <p className="text-xs text-slate-500 mb-4">Click "Create New Quiz" to build your questionnaire.</p>
             </div>
           ) : (
             quizzes.map((quiz) => {
@@ -1031,17 +1010,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                   <div className="p-8 text-center text-slate-400 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-3">
                     <p className="text-sm font-bold text-white">No questions in this quiz yet.</p>
                     <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                      Add questions manually or load 8 curated sample questions to immediately launch live arena sessions.
+                      Click "Add Question" above to add questions to this quiz. Only the questions you add here will be shown to participants who enter this quiz's PIN.
                     </p>
-                    <button
-                      type="button"
-                      disabled={actionLoading}
-                      onClick={() => handleLoadSampleQuestions(selectedQuiz.id)}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
-                    >
-                      {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                      <span>Load 8 Sample Questions</span>
-                    </button>
                   </div>
                 ) : (
                   questions.map((q, idx) => (
