@@ -26,7 +26,10 @@ import {
   ArrowRight,
   Mail,
   Settings,
+  StopCircle,
+  Loader2,
 } from 'lucide-react';
+import { endGameSession } from '../../lib/game/gameEngine';
 
 const NAV_VISIBILITY_STORAGE_KEY = 'cyberarena_nav_visibility_v2';
 
@@ -97,7 +100,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return () => unsub();
   }, [activeGameId]);
 
-  // Metrics
+  // Metrics & Active Sessions list
+  const [activeSessionsList, setActiveSessionsList] = useState<Game[]>([]);
+  const [endingSessionId, setEndingSessionId] = useState<string | null>(null);
   const [metrics, setMetrics] = useState({
     totalQuizzes: 0,
     publishedQuizzes: 0,
@@ -115,22 +120,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       const gamesSnap = await getDocs(collection(db, 'games'));
       const totalG = gamesSnap.size;
-      const activeG = gamesSnap.docs.filter((d) => d.data().status !== 'FINISHED').length;
+      const activeGameDocs = gamesSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as Game))
+        .filter((g) => g.status !== 'FINISHED')
+        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
       let totalP = 0;
       gamesSnap.docs.forEach((d) => {
         totalP += d.data().playerCount || 0;
       });
 
+      setActiveSessionsList(activeGameDocs);
       setMetrics({
         totalQuizzes: totalQ,
         publishedQuizzes: pubQ,
-        activeGames: activeG,
+        activeGames: activeGameDocs.length,
         totalPlayers: totalP,
         gamesPlayed: totalG,
       });
     } catch (err) {
       console.error('Error fetching dashboard metrics:', err);
+    }
+  };
+
+  const handleEndActiveSession = async (gameId: string) => {
+    try {
+      setEndingSessionId(gameId);
+      await endGameSession(gameId);
+      await fetchMetrics();
+    } catch (err) {
+      console.error('Failed to end session:', err);
+    } finally {
+      setEndingSessionId(null);
     }
   };
 
@@ -306,6 +327,80 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <p className="text-3xl font-mono font-black text-purple-400 mt-2">{metrics.gamesPlayed}</p>
                 <span className="text-[11px] text-slate-500 mt-1 block">Completed sessions</span>
               </div>
+            </div>
+
+            {/* Active Sessions Management Panel */}
+            <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="font-black text-lg text-white">
+                    Active Game Sessions ({activeSessionsList.length})
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Manage or end any active PIN session currently open to participants.
+                  </p>
+                </div>
+              </div>
+
+              {activeSessionsList.length === 0 ? (
+                <div className="py-6 text-center text-xs text-slate-500 bg-slate-950/60 rounded-2xl border border-slate-800/80">
+                  No active game sessions right now.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {activeSessionsList.map((sessionGame) => (
+                    <div
+                      key={sessionGame.id}
+                      className="p-3.5 sm:p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                          <h4 className="font-bold text-white text-sm sm:text-base truncate">
+                            {sessionGame.quizTitle}
+                          </h4>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-slate-400 mt-1 font-mono">
+                          <span>
+                            PIN: <strong className="text-indigo-400">{sessionGame.gamePin}</strong>
+                          </span>
+                          <span>•</span>
+                          <span>{sessionGame.playerCount || 0} Players</span>
+                          <span>•</span>
+                          <span className="text-emerald-400 uppercase font-bold text-[10px]">
+                            {sessionGame.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => onStartLiveGame(sessionGame.id)}
+                          className="min-h-[36px] px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Open Room
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEndActiveSession(sessionGame.id)}
+                          disabled={endingSessionId === sessionGame.id}
+                          className="min-h-[36px] flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          {endingSessionId === sessionGame.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <StopCircle className="w-3.5 h-3.5" />
+                          )}
+                          <span>
+                            {endingSessionId === sessionGame.id ? 'Ending...' : 'End Session'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Live Operations Architecture Summary */}

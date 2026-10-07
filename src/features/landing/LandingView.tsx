@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Sparkles, Users, Trophy, ShieldCheck, ArrowRight, Loader2, AlertCircle, PartyPopper } from 'lucide-react';
-import { joinGameSession } from '../../lib/game/gameEngine';
+import { joinGameSession, prefetchPinSession } from '../../lib/game/gameEngine';
+import { GameQuestionSnapshot } from '../../types';
 import { soundManager } from '../../lib/sound/soundManager';
 import { FloatingPartyObjects } from '../../components/FloatingPartyObjects';
 import { AvatarPickerModal } from './AvatarPickerModal';
@@ -18,6 +19,7 @@ interface LandingViewProps {
     avatarId?: string;
     avatarUrl?: string;
     alreadyCompleted?: boolean;
+    preloadedQuestions?: GameQuestionSnapshot[];
   }) => void;
   onNavigateAdmin?: () => void;
 }
@@ -58,6 +60,14 @@ export const LandingView: React.FC<LandingViewProps> = ({ onJoinSuccess, onNavig
     return () => window.removeEventListener('popstate', syncPinFromUrl);
   }, []);
 
+  // Prefetch quiz & questions in the background as soon as the 6-digit PIN is entered
+  useEffect(() => {
+    const clean = pin.trim().replace(/\D/g, '');
+    if (clean.length === 6) {
+      prefetchPinSession(clean);
+    }
+  }, [pin]);
+
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -92,6 +102,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onJoinSuccess, onNavig
         avatarId: res.avatarId || avatarToUse.id,
         avatarUrl: res.avatarUrl || avatarToUse.imageUrl,
         alreadyCompleted: Boolean(res.alreadyCompleted),
+        preloadedQuestions: res.preloadedQuestions,
       });
     } catch (err: any) {
       setError(err?.message || 'Failed to join quiz. Please verify your PIN and try again.');

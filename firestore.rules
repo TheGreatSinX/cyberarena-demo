@@ -204,8 +204,8 @@ service cloud.firestore {
         allow get: if isValidId(playerId);
         allow list: if true;
         allow create: if isValidId(playerId) && isValidPlayer(incoming());
-        allow update: if isValidId(playerId) && (isAdmin() || (isValidPlayer(incoming()) && incoming().sessionToken == existing().sessionToken));
-        allow delete: if isValidId(playerId) && isAdmin();
+        allow update: if isValidId(playerId) && (isAdmin() || isSignedIn() || (isValidPlayer(incoming()) && incoming().sessionToken == existing().sessionToken));
+        allow delete: if isValidId(playerId) && (isAdmin() || isSignedIn());
       }
 
       // Player submitted answers
@@ -214,7 +214,7 @@ service cloud.firestore {
         allow list: if true;
         allow create: if isValidId(answerId) && isValidAnswer(incoming());
         allow update: if false;
-        allow delete: if isAdmin();
+        allow delete: if isAdmin() || isSignedIn();
       }
 
       // Final results per player
@@ -222,7 +222,7 @@ service cloud.firestore {
         allow get: if isValidId(playerId);
         allow list: if true;
         allow create, update: if isValidId(playerId);
-        allow delete: if isValidId(playerId) && isAdmin();
+        allow delete: if isValidId(playerId) && (isAdmin() || isSignedIn());
       }
     }
 

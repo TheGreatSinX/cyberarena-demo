@@ -9,11 +9,14 @@ import {
   query,
   where,
   orderBy,
+  writeBatch,
+  increment,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import {
   Game,
   GameStatus,
+  GameQuestionSnapshot,
   Question,
   Quiz,
   Player,
@@ -21,6 +24,131 @@ import {
   GameResult,
 } from '../../types';
 import { handleFirestoreError, OperationType } from '../firebase/errors';
+
+// In-memory prefetch cache so entering a 6-digit PIN on the Landing page resolves the quiz/game in background
+interface PrefetchedPinCache {
+  pin: string;
+  timestamp: number;
+  gameId: string;
+  gameData: Game;
+  questions: GameQuestionSnapshot[];
+}
+
+let prefetchedPinCache: PrefetchedPinCache | null = null;
+
+/**
+ * Prefetches the game session and questions as soon as a participant finishes typing a 6-digit PIN
+ * on the landing page, making clicking "JOIN GAME" near-instantaneous.
+ */
+export async function prefetchPinSession(rawPin: string): Promise<void> {
+  const cleanPin = rawPin.trim().replace(/\D/g, '');
+  if (cleanPin.length !== 6) return;
+  if (
+    prefetchedPinCache &&
+    prefetchedPinCache.pin === cleanPin &&
+    Date.now() - prefetchedPinCache.timestamp < 30000
+  ) {
+    return;
+  }
+
+  try {
+    const [quizPinSnap, pinGamesSnap] = await Promise.all([
+      getDocs(query(collection(db, 'quizzes'), where('gamePin', '==', cleanPin))),
+      getDocs(query(collection(db, 'games'), where('gamePin', '==', cleanPin))),
+    ]);
+
+    let gameId = '';
+    let gameData: Game | null = null;
+    let quizId = '';
+
+    if (!quizPinSnap.empty) {
+      const sortedQuizzes = [...quizPinSnap.docs].sort((a, b) => {
+        const aPub = a.data().status === 'PUBLISHED' ? 1 : 0;
+        const bPub = b.data().status === 'PUBLISHED' ? 1 : 0;
+        if (aPub !== bPub) return bPub - aPub;
+        return (b.data().updatedAt || '').localeCompare(a.data().updatedAt || '');
+      });
+      const targetQuizDoc = sortedQuizzes[0];
+      const targetQuiz = targetQuizDoc.data() as Quiz;
+      quizId = targetQuizDoc.id;
+
+      // Match existing game for this quizId
+      if (targetQuiz.activeGameId) {
+        const matchingFromPin = pinGamesSnap.docs.find((d) => d.id === targetQuiz.activeGameId);
+        if (matchingFromPin) {
+          gameId = matchingFromPin.id;
+          gameData = matchingFromPin.data() as Game;
+        } else {
+          const gSnap = await getDoc(doc(db, 'games', targetQuiz.activeGameId));
+          if (gSnap.exists() && gSnap.data()?.quizId === quizId) {
+            gameId = gSnap.id;
+            gameData = gSnap.data() as Game;
+          }
+        }
+      }
+
+      if (!gameData) {
+        const matchingQuizGame = pinGamesSnap.docs.find((d) => d.data().quizId === quizId);
+        if (matchingQuizGame) {
+          gameId = matchingQuizGame.id;
+          gameData = matchingQuizGame.data() as Game;
+        }
+      }
+    } else if (!pinGamesSnap.empty) {
+      const sortedDocs = [...pinGamesSnap.docs].sort((a, b) =>
+        (b.data().createdAt || '').localeCompare(a.data().createdAt || '')
+      );
+      gameId = sortedDocs[0].id;
+      gameData = sortedDocs[0].data() as Game;
+      quizId = gameData.quizId || '';
+    }
+
+    if (!gameId || !gameData) return;
+
+    // Preload questions in parallel
+    const targetQuizId = quizId || gameData.quizId;
+    const [quizQSnap, gameQSnap] = await Promise.all([
+      targetQuizId
+        ? getDocs(query(collection(db, `quizzes/${targetQuizId}/questions`), orderBy('sortOrder', 'asc')))
+        : Promise.resolve(null),
+      getDocs(query(collection(db, `games/${gameId}/questions`), orderBy('sortOrder', 'asc'))),
+    ]);
+
+    let questions: GameQuestionSnapshot[] = [];
+    if (quizQSnap && !quizQSnap.empty) {
+      questions = quizQSnap.docs
+        .filter((d) => !isLegacyMockQuestion((d.data() as Question).questionText))
+        .map((d, idx) => {
+          const q = d.data() as Question;
+          return {
+            id: d.id,
+            questionType: q.questionType,
+            questionText: q.questionText,
+            imageUrl: q.imageUrl || null,
+            explanation: q.explanation || null,
+            timeLimitSeconds: q.timeLimitSeconds || 20,
+            points: q.points || 1000,
+            sortOrder: idx + 1,
+            options: q.options || [],
+          };
+        });
+    } else if (!gameQSnap.empty) {
+      questions = gameQSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as GameQuestionSnapshot))
+        .filter((q) => !isLegacyMockQuestion(q.questionText));
+    }
+
+    prefetchedPinCache = {
+      pin: cleanPin,
+      timestamp: Date.now(),
+      gameId,
+      gameData,
+      questions,
+    };
+  } catch {
+    // Non-blocking prefetch ignore
+  }
+}
 
 // Legacy mock question texts that were previously auto-seeded into quizzes/games
 const LEGACY_MOCK_QUESTION_TEXTS = new Set([
@@ -257,18 +385,25 @@ export async function syncQuizPinSession(
     }
 
     // Remove any stale or old question documents in games/{gameId}/questions and privateQuestions
-    // that are NOT part of the current quiz's validQuestionDocs
+    // and sync all current quiz questions in a single atomic writeBatch for speed
     const validIds = new Set(validQuestionDocs.map((d) => d.id));
-    const existingPublicQSnap = await getDocs(collection(db, `games/${gameId}/questions`));
+    const [existingPublicQSnap, existingPrivateQSnap] = await Promise.all([
+      getDocs(collection(db, `games/${gameId}/questions`)),
+      getDocs(collection(db, `games/${gameId}/privateQuestions`)).catch(() => null),
+    ]);
+
+    const batch = writeBatch(db);
+
     for (const oldDoc of existingPublicQSnap.docs) {
       if (!validIds.has(oldDoc.id)) {
-        await deleteDoc(oldDoc.ref);
+        batch.delete(oldDoc.ref);
       }
     }
-    const existingPrivateQSnap = await getDocs(collection(db, `games/${gameId}/privateQuestions`));
-    for (const oldPrivDoc of existingPrivateQSnap.docs) {
-      if (!validIds.has(oldPrivDoc.id)) {
-        await deleteDoc(oldPrivDoc.ref);
+    if (existingPrivateQSnap) {
+      for (const oldPrivDoc of existingPrivateQSnap.docs) {
+        if (!validIds.has(oldPrivDoc.id)) {
+          batch.delete(oldPrivDoc.ref);
+        }
       }
     }
 
@@ -278,7 +413,7 @@ export async function syncQuizPinSession(
       const qData = qDoc.data() as Question;
 
       const publicQRef = doc(db, `games/${gameId}/questions`, qDoc.id);
-      await setDoc(publicQRef, {
+      batch.set(publicQRef, {
         questionType: qData.questionType,
         questionText: qData.questionText,
         imageUrl: qData.imageUrl || null,
@@ -294,7 +429,7 @@ export async function syncQuizPinSession(
       });
 
       const privateQRef = doc(db, `games/${gameId}/privateQuestions`, qDoc.id);
-      await setDoc(privateQRef, {
+      batch.set(privateQRef, {
         correctOptionId: qData.correctOptionId,
         explanation: qData.explanation || null,
         points: qData.points,
@@ -302,13 +437,16 @@ export async function syncQuizPinSession(
     }
 
     // Save PIN, dueDate, and activeGameId on the Quiz document
-    await updateDoc(quizRef, {
+    batch.update(quizRef, {
       gamePin: finalPin,
       dueDate: finalDueDate,
       activeGameId: gameId,
       questionCount: validQuestionDocs.length,
       updatedAt: nowIso,
     });
+
+    await batch.commit();
+    prefetchedPinCache = null;
 
     return { gameId, gamePin: finalPin, dueDate: finalDueDate };
   } catch (err) {
@@ -336,61 +474,146 @@ export async function joinGameSession(
   avatarId?: string;
   avatarUrl?: string;
   alreadyCompleted?: boolean;
+  preloadedQuestions?: GameQuestionSnapshot[];
 }> {
   const nickname = rawNickname.trim().slice(0, 48);
   if (!nickname) {
     throw new Error('Please enter your full name.');
   }
 
-  const cleanPin = gamePin.trim();
-
-  // First check the authoritative Quiz with this current gamePin so we always load the exact current quiz for this PIN
-  const quizPinQuery = query(collection(db, 'quizzes'), where('gamePin', '==', cleanPin));
-  const quizPinSnap = await getDocs(quizPinQuery);
-
+  const cleanPin = gamePin.trim().replace(/\D/g, '');
   let gameId = '';
   let gameData: Game | null = null;
+  let preloadedQuestions: GameQuestionSnapshot[] = [];
+  let effectiveDueDate: string | null = null;
 
-  if (!quizPinSnap.empty) {
-    // Prefer published quizzes or most recently updated quiz matching this PIN
-    const sortedQuizzes = [...quizPinSnap.docs].sort((a, b) => {
-      const aPub = a.data().status === 'PUBLISHED' ? 1 : 0;
-      const bPub = b.data().status === 'PUBLISHED' ? 1 : 0;
-      if (aPub !== bPub) return bPub - aPub;
-      return (b.data().updatedAt || '').localeCompare(a.data().updatedAt || '');
-    });
-
-    const targetQuizDoc = sortedQuizzes[0];
-    const targetQuiz = targetQuizDoc.data() as Quiz;
-
-    if (targetQuiz.status !== 'PUBLISHED') {
-      throw new Error('This quiz is currently in Draft/Archived status and is not accepting participants yet.');
-    }
-
-    // Sync the quiz session to guarantee the game's questions strictly match the current quiz's questions
-    const synced = await syncQuizPinSession(
-      targetQuizDoc.id,
-      targetQuiz.createdBy || 'admin',
-      cleanPin,
-      targetQuiz.dueDate || null
-    );
-    gameId = synced.gameId;
-    const freshGameSnap = await getDoc(doc(db, 'games', gameId));
-    if (freshGameSnap.exists()) {
-      gameData = freshGameSnap.data() as Game;
-    }
+  // 1. Check if we already prefetched this PIN while the user was typing their name
+  if (
+    prefetchedPinCache &&
+    prefetchedPinCache.pin === cleanPin &&
+    Date.now() - prefetchedPinCache.timestamp < 30000
+  ) {
+    gameId = prefetchedPinCache.gameId;
+    gameData = prefetchedPinCache.gameData;
+    preloadedQuestions = prefetchedPinCache.questions;
+    effectiveDueDate = gameData.dueDate || null;
   } else {
-    // Fallback: Check if a standalone live game session exists with this PIN
-    const pinQuery = query(collection(db, 'games'), where('gamePin', '==', cleanPin));
-    const pinSnap = await getDocs(pinQuery);
+    // 2. Query quizzes and games in parallel (fast read-only resolution safe for unauthenticated participants)
+    const [quizPinSnap, pinGamesSnap] = await Promise.all([
+      getDocs(query(collection(db, 'quizzes'), where('gamePin', '==', cleanPin))),
+      getDocs(query(collection(db, 'games'), where('gamePin', '==', cleanPin))),
+    ]);
 
-    if (!pinSnap.empty) {
-      const sortedDocs = [...pinSnap.docs].sort((a, b) =>
+    let targetQuizDoc = null;
+    let targetQuiz: Quiz | null = null;
+
+    if (!quizPinSnap.empty) {
+      const sortedQuizzes = [...quizPinSnap.docs].sort((a, b) => {
+        const aPub = a.data().status === 'PUBLISHED' ? 1 : 0;
+        const bPub = b.data().status === 'PUBLISHED' ? 1 : 0;
+        if (aPub !== bPub) return bPub - aPub;
+        return (b.data().updatedAt || '').localeCompare(a.data().updatedAt || '');
+      });
+      targetQuizDoc = sortedQuizzes[0];
+      targetQuiz = targetQuizDoc.data() as Quiz;
+
+      if (targetQuiz.status !== 'PUBLISHED') {
+        throw new Error('This quiz is currently in Draft/Archived status and is not accepting participants yet.');
+      }
+
+      effectiveDueDate = targetQuiz.dueDate || null;
+
+      // Locate the existing game document for this quiz without triggering admin-only writes
+      if (targetQuiz.activeGameId) {
+        const fromPinSnap = pinGamesSnap.docs.find((d) => d.id === targetQuiz!.activeGameId);
+        if (fromPinSnap) {
+          gameId = fromPinSnap.id;
+          gameData = fromPinSnap.data() as Game;
+        } else {
+          const directGameSnap = await getDoc(doc(db, 'games', targetQuiz.activeGameId));
+          if (directGameSnap.exists() && directGameSnap.data()?.quizId === targetQuizDoc.id) {
+            gameId = directGameSnap.id;
+            gameData = directGameSnap.data() as Game;
+          }
+        }
+      }
+
+      if (!gameData) {
+        const matchingQuizGame = pinGamesSnap.docs.find((d) => d.data().quizId === targetQuizDoc!.id);
+        if (matchingQuizGame) {
+          gameId = matchingQuizGame.id;
+          gameData = matchingQuizGame.data() as Game;
+        }
+      }
+    } else if (!pinGamesSnap.empty) {
+      const sortedDocs = [...pinGamesSnap.docs].sort((a, b) =>
         (b.data().createdAt || '').localeCompare(a.data().createdAt || '')
       );
       const chosenDoc = sortedDocs[0];
       gameId = chosenDoc.id;
       gameData = chosenDoc.data() as Game;
+      effectiveDueDate = gameData.dueDate || null;
+    }
+
+    // Load current quiz questions in parallel
+    const resolvedQuizId = targetQuizDoc?.id || gameData?.quizId || '';
+    const [quizQSnap, gameQSnap] = await Promise.all([
+      resolvedQuizId
+        ? getDocs(query(collection(db, `quizzes/${resolvedQuizId}/questions`), orderBy('sortOrder', 'asc')))
+        : Promise.resolve(null),
+      gameId
+        ? getDocs(query(collection(db, `games/${gameId}/questions`), orderBy('sortOrder', 'asc')))
+        : Promise.resolve(null),
+    ]);
+
+    if (quizQSnap && !quizQSnap.empty) {
+      preloadedQuestions = quizQSnap.docs
+        .filter((d) => !isLegacyMockQuestion((d.data() as Question).questionText))
+        .map((d, idx) => {
+          const q = d.data() as Question;
+          return {
+            id: d.id,
+            questionType: q.questionType,
+            questionText: q.questionText,
+            imageUrl: q.imageUrl || null,
+            explanation: q.explanation || null,
+            timeLimitSeconds: q.timeLimitSeconds || 20,
+            points: q.points || 1000,
+            sortOrder: idx + 1,
+            options: q.options || [],
+          };
+        });
+    } else if (gameQSnap && !gameQSnap.empty) {
+      preloadedQuestions = gameQSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as GameQuestionSnapshot))
+        .filter((q) => !isLegacyMockQuestion(q.questionText));
+    }
+
+    // Only if a quiz existed with a PIN but had no game document at all yet, create one (allowed by firestore.rules)
+    if (!gameData && targetQuizDoc && targetQuiz) {
+      const newGameRef = doc(collection(db, 'games'));
+      gameId = newGameRef.id;
+      const nowIso = new Date().toISOString();
+      const newGamePayload: Omit<Game, 'id'> = {
+        quizId: targetQuizDoc.id,
+        quizTitle: targetQuiz.title,
+        gamePin: cleanPin,
+        dueDate: effectiveDueDate,
+        mode: 'SELF_PACED',
+        status: 'QUESTION_ACTIVE',
+        currentQuestionIndex: 0,
+        currentQuestionId: preloadedQuestions[0]?.id || null,
+        totalQuestions: preloadedQuestions.length,
+        playerCount: 0,
+        questionStartedAt: Date.now(),
+        questionEndsAt: null,
+        createdBy: targetQuiz.createdBy || 'admin',
+        createdAt: nowIso,
+        startedAt: nowIso,
+        endedAt: null,
+      };
+      await setDoc(newGameRef, newGamePayload);
+      gameData = newGamePayload as Game;
     }
   }
 
@@ -398,24 +621,16 @@ export async function joinGameSession(
     throw new Error('PIN not found. Please verify the 6-digit PIN from your Administrator.');
   }
 
-  if ((gameData.totalQuestions || 0) === 0) {
+  const totalQuestionCount = preloadedQuestions.length || gameData.totalQuestions || 0;
+  if (totalQuestionCount === 0) {
     throw new Error('This quiz does not have any published questions yet. Please contact your Administrator.');
   }
 
-  // Also check the parent quiz's dueDate if present
-  let effectiveDueDate = gameData.dueDate || null;
-  if (!effectiveDueDate && gameData.quizId) {
-    try {
-      const parentQuizSnap = await getDoc(doc(db, 'quizzes', gameData.quizId));
-      if (parentQuizSnap.exists()) {
-        effectiveDueDate = (parentQuizSnap.data() as Quiz).dueDate || null;
-      }
-    } catch {
-      // ignore
-    }
+  if (!effectiveDueDate) {
+    effectiveDueDate = gameData.dueDate || null;
   }
 
-  // Check if this participant already exists in games/{gameId}/players (by Full Name case-insensitive OR cached completed PIN session)
+  // 3. Fast participant lookup
   const playersSnap = await getDocs(collection(db, `games/${gameId}/players`));
   let cachedCompletedPlayerId: string | null = null;
   try {
@@ -443,23 +658,23 @@ export async function joinGameSession(
     const existingPlayer = existingPlayerDoc.data() as Player;
     const existingPlayerId = existingPlayerDoc.id;
 
-    // Check how many answers this player has already submitted or if a result record exists
-    const resultSnap = await getDoc(doc(db, `games/${gameId}/results`, existingPlayerId));
-    const answersSnap = await getDocs(
-      query(
-        collection(db, `games/${gameId}/answers`),
-        where('playerId', '==', existingPlayerId)
-      )
-    );
+    // Fetch result & answers in parallel
+    const [resultSnap, answersSnap] = await Promise.all([
+      getDoc(doc(db, `games/${gameId}/results`, existingPlayerId)),
+      getDocs(
+        query(
+          collection(db, `games/${gameId}/answers`),
+          where('playerId', '==', existingPlayerId)
+        )
+      ),
+    ]);
 
-    const totalQ = gameData.totalQuestions || 1;
     const isAlreadyDone =
       Boolean(cachedCompletedPlayerId) ||
       localStorage.getItem(`quizarena_completed_game_${gameId}_${existingPlayerId}`) === 'true' ||
-      answersSnap.size >= totalQ ||
+      answersSnap.size >= totalQuestionCount ||
       resultSnap.exists();
 
-    // Ensure their result summary is finalized if they are returning after completion
     if (isAlreadyDone) {
       localStorage.setItem(
         `quizarena_completed_pin_${cleanPin}`,
@@ -483,6 +698,7 @@ export async function joinGameSession(
       avatarId: existingPlayer.avatarId || avatarId || 'blue_thinker',
       avatarUrl: existingPlayer.avatarUrl || avatarUrl || '',
       alreadyCompleted: isAlreadyDone,
+      preloadedQuestions,
     };
   }
 
@@ -494,26 +710,30 @@ export async function joinGameSession(
   const sessionToken = `st_${Math.random().toString(36).substring(2)}${Date.now()}`;
   const finalAvatarId = avatarId || 'blue_thinker';
   const finalAvatarUrl = avatarUrl || '';
+  const nowIso = new Date().toISOString();
 
+  // 4. Write new player and increment playerCount in parallel for fast entry
   const playerRef = doc(db, `games/${gameId}/players`, playerId);
-  await setDoc(playerRef, {
-    nickname,
-    avatarId: finalAvatarId,
-    avatarUrl: finalAvatarUrl,
-    sessionToken,
-    score: 0,
-    streak: 0,
-    correctCount: 0,
-    rank: 1,
-    isConnected: true,
-    joinedAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-  });
-
-  // Increment player count
-  await updateDoc(doc(db, 'games', gameId), {
-    playerCount: (gameData.playerCount || 0) + 1,
-  });
+  await Promise.all([
+    setDoc(playerRef, {
+      nickname,
+      avatarId: finalAvatarId,
+      avatarUrl: finalAvatarUrl,
+      sessionToken,
+      score: 0,
+      streak: 0,
+      correctCount: 0,
+      rank: 1,
+      isConnected: true,
+      joinedAt: nowIso,
+      lastActiveAt: nowIso,
+    }),
+    updateDoc(doc(db, 'games', gameId), {
+      playerCount: increment(1),
+    }).catch(() => {
+      // Non-fatal if concurrent playerCount update is skipped
+    }),
+  ]);
 
   // Store in localStorage for reconnection
   localStorage.setItem(
@@ -539,6 +759,7 @@ export async function joinGameSession(
     avatarId: finalAvatarId,
     avatarUrl: finalAvatarUrl,
     alreadyCompleted: false,
+    preloadedQuestions,
   };
 }
 
@@ -556,20 +777,31 @@ export async function submitPlayerAnswer(
   correctOptionId?: string;
   explanation?: string | null;
 }> {
+  // Fetch game, player, existing answer, and private question data in parallel for fast evaluation
   const gameRef = doc(db, 'games', gameId);
-  const gameSnap = await getDoc(gameRef);
+  const playerRef = doc(db, `games/${gameId}/players`, playerId);
+  const answerRef = doc(db, `games/${gameId}/answers`, `${playerId}_${questionId}`);
+  const privateQRef = doc(db, `games/${gameId}/privateQuestions`, questionId);
+
+  const [gameSnap, playerSnap, answerSnap, privateQSnap] = await Promise.all([
+    getDoc(gameRef),
+    getDoc(playerRef),
+    getDoc(answerRef),
+    getDoc(privateQRef).catch(() => null),
+  ]);
 
   if (!gameSnap.exists()) {
     throw new Error('Quiz session not found.');
   }
 
   const gameData = gameSnap.data() as Game;
+  if (gameData.status === 'FINISHED') {
+    throw new Error('This quiz session has been ended by the Administrator and is no longer accepting answers.');
+  }
   if (isPastDueDate(gameData.dueDate)) {
     throw new Error(`This quiz passed its due date (${gameData.dueDate}) and is no longer accepting answers.`);
   }
 
-  const playerRef = doc(db, `games/${gameId}/players`, playerId);
-  const playerSnap = await getDoc(playerRef);
   if (!playerSnap.exists()) {
     throw new Error('Participant session not found.');
   }
@@ -580,8 +812,6 @@ export async function submitPlayerAnswer(
   }
 
   // Prevent duplicate submission for the same question by the same player attempt
-  const answerRef = doc(db, `games/${gameId}/answers`, `${playerId}_${questionId}`);
-  const answerSnap = await getDoc(answerRef);
   if (answerSnap.exists()) {
     const existingAns = answerSnap.data() as AnswerSubmission;
     return {
@@ -591,14 +821,11 @@ export async function submitPlayerAnswer(
     };
   }
 
-  // Retrieve private question data for authoritative evaluation
-  const privateQRef = doc(db, `games/${gameId}/privateQuestions`, questionId);
-  const privateQSnap = await getDoc(privateQRef);
   let correctOptionId = '';
   let basePoints = 1000;
   let explanation: string | null = null;
 
-  if (privateQSnap.exists()) {
+  if (privateQSnap && privateQSnap.exists()) {
     const privateQData = privateQSnap.data() as {
       correctOptionId: string;
       points: number;
@@ -634,7 +861,23 @@ export async function submitPlayerAnswer(
     pointsAwarded = Math.round(basePoints * multiplier);
   }
 
-  await setDoc(answerRef, {
+  const newScore = (playerData.score || 0) + pointsAwarded;
+  const newStreak = isCorrect ? (playerData.streak || 0) + 1 : 0;
+  const newCorrectCount = isCorrect
+    ? (playerData.correctCount || 0) + 1
+    : playerData.correctCount || 0;
+
+  const accuracy =
+    gameData.totalQuestions > 0
+      ? Math.round((newCorrectCount / gameData.totalQuestions) * 100)
+      : 0;
+
+  const resultRef = doc(db, `games/${gameId}/results`, playerId);
+  const nowIso = new Date().toISOString();
+
+  // Commit answer, player score update, and live result summary in a single atomic batch
+  const batch = writeBatch(db);
+  batch.set(answerRef, {
     playerId,
     nickname: playerData.nickname,
     questionId,
@@ -642,30 +885,15 @@ export async function submitPlayerAnswer(
     isCorrect,
     pointsAwarded,
     responseTimeMs,
-    submittedAt: new Date().toISOString(),
+    submittedAt: nowIso,
   });
-
-  const newScore = (playerData.score || 0) + pointsAwarded;
-  const newStreak = isCorrect ? (playerData.streak || 0) + 1 : 0;
-  const newCorrectCount = isCorrect
-    ? (playerData.correctCount || 0) + 1
-    : playerData.correctCount || 0;
-
-  await updateDoc(playerRef, {
+  batch.update(playerRef, {
     score: newScore,
     streak: newStreak,
     correctCount: newCorrectCount,
-    lastActiveAt: new Date().toISOString(),
+    lastActiveAt: nowIso,
   });
-
-  // Also upsert player's result record in games/{gameId}/results/{playerId} so Admin Results & CSV stays live
-  const accuracy =
-    gameData.totalQuestions > 0
-      ? Math.round((newCorrectCount / gameData.totalQuestions) * 100)
-      : 0;
-
-  const resultRef = doc(db, `games/${gameId}/results`, playerId);
-  await setDoc(resultRef, {
+  batch.set(resultRef, {
     playerId,
     nickname: playerData.nickname,
     avatarId: playerData.avatarId || 'blue_thinker',
@@ -676,8 +904,10 @@ export async function submitPlayerAnswer(
     totalQuestions: gameData.totalQuestions || 1,
     accuracy,
     averageResponseTime: Math.round((responseTimeMs / 1000) * 10) / 10,
-    createdAt: new Date().toISOString(),
+    createdAt: nowIso,
   });
+
+  await batch.commit();
 
   return {
     submitted: true,
@@ -817,6 +1047,93 @@ export async function advanceGameState(
   }
 
   await updateDoc(gameRef, updatePayload);
+  prefetchedPinCache = null;
+}
+
+/**
+ * Ends an active game session immediately, archiving final standings and marking status as FINISHED.
+ */
+export async function endGameSession(gameId: string): Promise<void> {
+  await advanceGameState(gameId, 'FINISHED');
+  prefetchedPinCache = null;
+}
+
+/**
+ * Deletes selected (or all) players, their answers, and their results from a game session
+ * to prepare the leaderboard for new players, and recalculates ranks & playerCount.
+ */
+export async function deletePlayersFromGame(
+  gameId: string,
+  playerIdsToDelete: string[]
+): Promise<{ remainingCount: number }> {
+  if (!gameId || playerIdsToDelete.length === 0) {
+    return { remainingCount: 0 };
+  }
+
+  const targetSet = new Set(playerIdsToDelete);
+
+  const [playersSnap, resultsSnap, answersSnap] = await Promise.all([
+    getDocs(collection(db, `games/${gameId}/players`)),
+    getDocs(collection(db, `games/${gameId}/results`)),
+    getDocs(collection(db, `games/${gameId}/answers`)),
+  ]);
+
+  // Delete matching players, results, and answers in batches (Firestore limit 500 ops per batch)
+  const refsToDelete = [];
+
+  for (const pDoc of playersSnap.docs) {
+    if (targetSet.has(pDoc.id)) {
+      refsToDelete.push(pDoc.ref);
+    }
+  }
+
+  for (const rDoc of resultsSnap.docs) {
+    const rData = rDoc.data();
+    if (targetSet.has(rDoc.id) || (rData.playerId && targetSet.has(rData.playerId))) {
+      refsToDelete.push(rDoc.ref);
+    }
+  }
+
+  for (const aDoc of answersSnap.docs) {
+    const aData = aDoc.data();
+    if (aData.playerId && targetSet.has(aData.playerId)) {
+      refsToDelete.push(aDoc.ref);
+    }
+  }
+
+  // Commit deletions in chunks of 400
+  for (let i = 0; i < refsToDelete.length; i += 400) {
+    const chunk = refsToDelete.slice(i, i + 400);
+    const batch = writeBatch(db);
+    for (const ref of chunk) {
+      batch.delete(ref);
+    }
+    await batch.commit();
+  }
+
+  // Recalculate ranks for remaining players and results
+  const remainingPlayers = playersSnap.docs
+    .filter((d) => !targetSet.has(d.id))
+    .sort((a, b) => (b.data().score || 0) - (a.data().score || 0));
+
+  const rankBatch = writeBatch(db);
+  remainingPlayers.forEach((pDoc, idx) => {
+    const newRank = idx + 1;
+    rankBatch.update(pDoc.ref, { rank: newRank });
+    const resRef = doc(db, `games/${gameId}/results`, pDoc.id);
+    if (resultsSnap.docs.some((r) => r.id === pDoc.id)) {
+      rankBatch.update(resRef, { rank: newRank });
+    }
+  });
+
+  rankBatch.update(doc(db, 'games', gameId), {
+    playerCount: remainingPlayers.length,
+  });
+
+  await rankBatch.commit();
+  prefetchedPinCache = null;
+
+  return { remainingCount: remainingPlayers.length };
 }
 
 export function exportGameResultsToCsv(

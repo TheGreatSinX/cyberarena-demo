@@ -10,6 +10,7 @@ import { AdminLoginMfa } from './features/admin/AdminLoginMfa';
 import { AdminDashboard } from './features/admin/AdminDashboard';
 import { AdminHostView } from './features/admin/AdminHostView';
 import { WeeklyRespondentView } from './features/weekly/WeeklyRespondentView';
+import { GameQuestionSnapshot } from './types';
 
 interface PlayerSession {
   playerId: string;
@@ -22,6 +23,7 @@ interface PlayerSession {
   avatarId?: string;
   avatarUrl?: string;
   alreadyCompleted?: boolean;
+  preloadedQuestions?: GameQuestionSnapshot[];
 }
 
 const AppContent: React.FC = () => {
