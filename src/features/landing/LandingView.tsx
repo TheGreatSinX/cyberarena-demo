@@ -225,7 +225,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   setError(null);
                   setNickname(e.target.value.slice(0, 48));
                 }}
-                placeholder="e.g. Alex Rivera"
+                placeholder="e.g. Juan Dela Cruz"
                 className="w-full text-center text-base sm:text-lg font-bold px-4 py-2.5 sm:py-3 rounded-2xl bg-slate-950/80 border-2 border-slate-700 focus:border-[#00A191] focus:ring-4 focus:ring-[#00A191]/20 text-white placeholder-slate-600 transition-all outline-none"
               />
             </div>
