@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './lib/auth/authContext';
 import { testConnection } from './lib/firebase/testConnection';
 import { Navbar } from './components/Navbar';
 import { LandingView } from './features/landing/LandingView';
+import { DataPrivacyNoticeView } from './features/landing/DataPrivacyNoticeView';
 import { PlayerView } from './features/player/PlayerView';
 import { AdminLoginMfa } from './features/admin/AdminLoginMfa';
 import { AdminDashboard } from './features/admin/AdminDashboard';
@@ -223,6 +224,10 @@ const AppContent: React.FC = () => {
             onNavigateToHost={() => setCurrentView('admin-host')}
             initialTab={adminInitialTab}
           />
+        ) : currentView === 'data-privacy' ? (
+          <DataPrivacyNoticeView
+            onAcknowledgeAndReturn={() => setCurrentView('landing')}
+          />
         ) : (
           <LandingView
             onJoinSuccess={handleJoinSuccess}
@@ -233,6 +238,7 @@ const AppContent: React.FC = () => {
                 setCurrentView('admin-login');
               }
             }}
+            onNavigatePrivacy={() => setCurrentView('data-privacy')}
           />
         )}
       </main>

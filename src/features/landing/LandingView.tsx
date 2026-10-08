@@ -22,9 +22,14 @@ interface LandingViewProps {
     preloadedQuestions?: GameQuestionSnapshot[];
   }) => void;
   onNavigateAdmin?: () => void;
+  onNavigatePrivacy?: () => void;
 }
 
-export const LandingView: React.FC<LandingViewProps> = ({ onJoinSuccess, onNavigateAdmin }) => {
+export const LandingView: React.FC<LandingViewProps> = ({
+  onJoinSuccess,
+  onNavigateAdmin,
+  onNavigatePrivacy,
+}) => {
   const [pin, setPin] = useState(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -262,6 +267,19 @@ export const LandingView: React.FC<LandingViewProps> = ({ onJoinSuccess, onNavig
             </button>
           </form>
         </div>
+
+        {/* DATA PRIVACY NOTICE Button beneath Join Card */}
+        <button
+          type="button"
+          onClick={() => {
+            soundManager.playAnswerSubmit();
+            onNavigatePrivacy?.();
+          }}
+          className="w-full mt-3.5 sm:mt-4 min-h-[44px] flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-[#0D1F3C]/90 hover:bg-[#0D1F3C] border border-[#00A191]/40 hover:border-[#00A191] text-[#E5E5E5] hover:text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg shadow-[#0D1F3C]/50 hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer"
+        >
+          <ShieldCheck className="w-4 h-4 text-[#00A191] shrink-0" />
+          <span>DATA PRIVACY NOTICE</span>
+        </button>
 
         {/* Feature Highlights */}
         <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-5 sm:mt-8">
