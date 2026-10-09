@@ -867,6 +867,21 @@ export async function submitPlayerAnswer(
     ? (playerData.correctCount || 0) + 1
     : playerData.correctCount || 0;
 
+  // Fetch all answers for this player so far to compute accurate cumulative averageResponseTime
+  const existingAnswersSnap = await getDocs(
+    query(collection(db, `games/${gameId}/answers`), where('playerId', '==', playerId))
+  ).catch(() => null);
+  const priorResponseTimesMs = existingAnswersSnap
+    ? existingAnswersSnap.docs
+        .filter((d) => d.id !== `${playerId}_${questionId}`)
+        .map((d) => (d.data() as AnswerSubmission).responseTimeMs || 0)
+    : [];
+  const allTimesMs = [...priorResponseTimesMs, responseTimeMs];
+  const avgResponseTimeSec =
+    allTimesMs.length > 0
+      ? Math.round((allTimesMs.reduce((sum, t) => sum + t, 0) / allTimesMs.length / 1000) * 10) / 10
+      : Math.round((responseTimeMs / 1000) * 10) / 10;
+
   const accuracy =
     gameData.totalQuestions > 0
       ? Math.round((newCorrectCount / gameData.totalQuestions) * 100)
@@ -893,19 +908,23 @@ export async function submitPlayerAnswer(
     correctCount: newCorrectCount,
     lastActiveAt: nowIso,
   });
-  batch.set(resultRef, {
-    playerId,
-    nickname: playerData.nickname,
-    avatarId: playerData.avatarId || 'blue_thinker',
-    avatarUrl: playerData.avatarUrl || '',
-    finalScore: newScore,
-    rank: playerData.rank || 1,
-    correctAnswers: newCorrectCount,
-    totalQuestions: gameData.totalQuestions || 1,
-    accuracy,
-    averageResponseTime: Math.round((responseTimeMs / 1000) * 10) / 10,
-    createdAt: nowIso,
-  });
+  batch.set(
+    resultRef,
+    {
+      playerId,
+      nickname: playerData.nickname,
+      avatarId: playerData.avatarId || 'blue_thinker',
+      avatarUrl: playerData.avatarUrl || '',
+      finalScore: newScore,
+      rank: playerData.rank || 1,
+      correctAnswers: newCorrectCount,
+      totalQuestions: gameData.totalQuestions || 1,
+      accuracy,
+      averageResponseTime: avgResponseTimeSec,
+      createdAt: nowIso,
+    },
+    { merge: true }
+  );
 
   await batch.commit();
 
@@ -918,49 +937,186 @@ export async function submitPlayerAnswer(
   };
 }
 
+/**
+ * Deterministic multi-level comparator for GameResult standings:
+ * 1. Highest finalScore (descending)
+ * 2. Highest correctAnswers (descending)
+ * 3. Fastest averageResponseTime (ascending, > 0 preferred)
+ * 4. Earliest createdAt / joinedAt (ascending)
+ * 5. Alphabetical nickname tie-breaker
+ */
+export function sortGameResultsProperly(results: GameResult[]): GameResult[] {
+  const sorted = [...results].sort((a, b) => {
+    const scoreDiff = (b.finalScore || 0) - (a.finalScore || 0);
+    if (scoreDiff !== 0) return scoreDiff;
+
+    const correctDiff = (b.correctAnswers || 0) - (a.correctAnswers || 0);
+    if (correctDiff !== 0) return correctDiff;
+
+    const aTime = a.averageResponseTime && a.averageResponseTime > 0 ? a.averageResponseTime : 9999;
+    const bTime = b.averageResponseTime && b.averageResponseTime > 0 ? b.averageResponseTime : 9999;
+    if (aTime !== bTime) return aTime - bTime;
+
+    const aCreated = a.createdAt || '';
+    const bCreated = b.createdAt || '';
+    if (aCreated && bCreated && aCreated !== bCreated) {
+      return aCreated.localeCompare(bCreated);
+    }
+
+    return (a.nickname || '').localeCompare(b.nickname || '');
+  });
+
+  return sorted.map((item, idx) => ({
+    ...item,
+    rank: idx + 1,
+  }));
+}
+
+/**
+ * Deterministic multi-level comparator for live Player objects:
+ * 1. Highest score (descending)
+ * 2. Highest correctCount (descending)
+ * 3. Highest streak (descending)
+ * 4. Earliest joinedAt (ascending)
+ * 5. Alphabetical nickname tie-breaker
+ */
+export function sortPlayersProperly(players: Player[]): Player[] {
+  const sorted = [...players].sort((a, b) => {
+    const scoreDiff = (b.score || 0) - (a.score || 0);
+    if (scoreDiff !== 0) return scoreDiff;
+
+    const correctDiff = (b.correctCount || 0) - (a.correctCount || 0);
+    if (correctDiff !== 0) return correctDiff;
+
+    const streakDiff = (b.streak || 0) - (a.streak || 0);
+    if (streakDiff !== 0) return streakDiff;
+
+    const aJoined = a.joinedAt || '';
+    const bJoined = b.joinedAt || '';
+    if (aJoined && bJoined && aJoined !== bJoined) {
+      return aJoined.localeCompare(bJoined);
+    }
+
+    return (a.nickname || '').localeCompare(b.nickname || '');
+  });
+
+  return sorted.map((p, idx) => ({
+    ...p,
+    rank: idx + 1,
+  }));
+}
+
+/**
+ * Recalculates and persists all player and result rankings for a game session
+ * using full multi-criteria tie-breaking (Score DESC -> Correct Answers DESC -> Avg Response Time ASC -> JoinedAt ASC).
+ */
+export async function recalculateAllGameRankings(gameId: string): Promise<GameResult[]> {
+  const gameSnap = await getDoc(doc(db, 'games', gameId));
+  if (!gameSnap.exists()) return [];
+  const gameData = gameSnap.data() as Game;
+
+  const [playersSnap, answersSnap, resultsSnap] = await Promise.all([
+    getDocs(collection(db, `games/${gameId}/players`)),
+    getDocs(collection(db, `games/${gameId}/answers`)),
+    getDocs(collection(db, `games/${gameId}/results`)),
+  ]);
+
+  const answers = answersSnap.docs.map((d) => d.data() as AnswerSubmission);
+  const existingResultsMap = new Map<string, GameResult>();
+  resultsSnap.docs.forEach((d) => {
+    const data = d.data() as GameResult;
+    existingResultsMap.set(d.id, { ...data, id: d.id, playerId: data.playerId || d.id });
+  });
+
+  const combinedResults: GameResult[] = playersSnap.docs.map((pDoc) => {
+    const pData = pDoc.data() as Player;
+    const prevResult = existingResultsMap.get(pDoc.id);
+    const playerAnswers = answers.filter((a) => a.playerId === pDoc.id);
+
+    const computedAvgTime =
+      playerAnswers.length > 0
+        ? Math.round(
+            (playerAnswers.reduce((sum, a) => sum + (a.responseTimeMs || 0), 0) /
+              playerAnswers.length /
+              1000) *
+              10
+          ) / 10
+        : prevResult?.averageResponseTime ?? 0;
+
+    const correctAnswers = pData.correctCount ?? prevResult?.correctAnswers ?? 0;
+    const totalQuestions = gameData.totalQuestions || prevResult?.totalQuestions || 1;
+    const accuracy =
+      totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+
+    return {
+      id: pDoc.id,
+      playerId: pDoc.id,
+      nickname: pData.nickname || prevResult?.nickname || 'Participant',
+      avatarId: pData.avatarId || prevResult?.avatarId || 'blue_thinker',
+      avatarUrl: pData.avatarUrl || prevResult?.avatarUrl || '',
+      finalScore: pData.score ?? prevResult?.finalScore ?? 0,
+      rank: 1,
+      correctAnswers,
+      totalQuestions,
+      accuracy,
+      averageResponseTime: computedAvgTime,
+      createdAt: pData.joinedAt || prevResult?.createdAt || new Date().toISOString(),
+    };
+  });
+
+  // Include any orphaned result docs whose player doc was already removed
+  existingResultsMap.forEach((r, rId) => {
+    if (!playersSnap.docs.some((p) => p.id === rId)) {
+      combinedResults.push(r);
+    }
+  });
+
+  const rankedResults = sortGameResultsProperly(combinedResults);
+
+  // Persist updated ranks to both players and results collections in batches of 200
+  const playerDocIds = new Set(playersSnap.docs.map((d) => d.id));
+  for (let i = 0; i < rankedResults.length; i += 200) {
+    const chunk = rankedResults.slice(i, i + 200);
+    const batch = writeBatch(db);
+    for (const r of chunk) {
+      const pId = r.playerId || r.id;
+      if (playerDocIds.has(pId)) {
+        batch.update(doc(db, `games/${gameId}/players`, pId), {
+          rank: r.rank,
+        });
+      }
+      batch.set(
+        doc(db, `games/${gameId}/results`, pId),
+        {
+          playerId: pId,
+          nickname: r.nickname,
+          avatarId: r.avatarId || 'blue_thinker',
+          avatarUrl: r.avatarUrl || '',
+          finalScore: r.finalScore,
+          rank: r.rank,
+          correctAnswers: r.correctAnswers,
+          totalQuestions: r.totalQuestions,
+          accuracy: r.accuracy,
+          averageResponseTime: r.averageResponseTime,
+          createdAt: r.createdAt,
+        },
+        { merge: true }
+      );
+    }
+    await batch.commit().catch(() => {
+      // Non-fatal if participant lacks permission to update other players' docs
+    });
+  }
+
+  return rankedResults;
+}
+
 export async function completePlayerSelfPacedSession(
   gameId: string,
   playerId: string
 ): Promise<void> {
   try {
-    const gameSnap = await getDoc(doc(db, 'games', gameId));
-    if (!gameSnap.exists()) return;
-    const gameData = gameSnap.data() as Game;
-
-    const playersSnap = await getDocs(
-      query(collection(db, `games/${gameId}/players`), orderBy('score', 'desc'))
-    );
-
-    let rank = 1;
-    for (const pDoc of playersSnap.docs) {
-      const pData = pDoc.data() as Player;
-      if (pDoc.id === playerId) {
-        await updateDoc(pDoc.ref, { rank, lastActiveAt: new Date().toISOString() });
-        const accuracy =
-          gameData.totalQuestions > 0
-            ? Math.round(((pData.correctCount || 0) / gameData.totalQuestions) * 100)
-            : 0;
-
-        await setDoc(
-          doc(db, `games/${gameId}/results`, pDoc.id),
-          {
-            playerId: pDoc.id,
-            nickname: pData.nickname,
-            avatarId: pData.avatarId || 'blue_thinker',
-            avatarUrl: pData.avatarUrl || '',
-            finalScore: pData.score || 0,
-            rank,
-            correctAnswers: pData.correctCount || 0,
-            totalQuestions: gameData.totalQuestions || 1,
-            accuracy,
-            averageResponseTime: 4.0,
-            createdAt: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-      }
-      rank++;
-    }
+    await recalculateAllGameRankings(gameId);
   } catch (err) {
     console.error('Error finalizing self-paced session:', err);
   }
@@ -1000,50 +1156,10 @@ export async function advanceGameState(
       updatePayload.questionEndsAt = now + timeLimitMs;
     }
   } else if (targetState === 'LEADERBOARD') {
-    // Recalculate player ranks
-    const playersSnap = await getDocs(query(collection(db, `games/${gameId}/players`), orderBy('score', 'desc')));
-    let rank = 1;
-    for (const pDoc of playersSnap.docs) {
-      await updateDoc(pDoc.ref, { rank });
-      rank++;
-    }
+    await recalculateAllGameRankings(gameId);
   } else if (targetState === 'FINISHED') {
     updatePayload.endedAt = new Date().toISOString();
-
-    // Persist final results
-    const playersSnap = await getDocs(query(collection(db, `games/${gameId}/players`), orderBy('score', 'desc')));
-    const answersSnap = await getDocs(collection(db, `games/${gameId}/answers`));
-    const answers = answersSnap.docs.map((d) => d.data() as AnswerSubmission);
-
-    let rank = 1;
-    for (const pDoc of playersSnap.docs) {
-      const pData = pDoc.data() as Player;
-      const playerAnswers = answers.filter((a) => a.playerId === pDoc.id);
-      const avgResponseTime = playerAnswers.length
-        ? Math.round(playerAnswers.reduce((sum, a) => sum + a.responseTimeMs, 0) / playerAnswers.length / 100) / 10
-        : 0;
-
-      const accuracy = gameData.totalQuestions > 0
-        ? Math.round(((pData.correctCount || 0) / gameData.totalQuestions) * 100)
-        : 0;
-
-      const resultRef = doc(db, `games/${gameId}/results`, pDoc.id);
-      await setDoc(resultRef, {
-        playerId: pDoc.id,
-        nickname: pData.nickname,
-        avatarId: pData.avatarId || 'blue_thinker',
-        avatarUrl: pData.avatarUrl || '',
-        finalScore: pData.score || 0,
-        rank,
-        correctAnswers: pData.correctCount || 0,
-        totalQuestions: gameData.totalQuestions,
-        accuracy,
-        averageResponseTime: avgResponseTime,
-        createdAt: new Date().toISOString(),
-      });
-
-      rank++;
-    }
+    await recalculateAllGameRankings(gameId);
   }
 
   await updateDoc(gameRef, updatePayload);
@@ -1111,29 +1227,16 @@ export async function deletePlayersFromGame(
     await batch.commit();
   }
 
-  // Recalculate ranks for remaining players and results
-  const remainingPlayers = playersSnap.docs
-    .filter((d) => !targetSet.has(d.id))
-    .sort((a, b) => (b.data().score || 0) - (a.data().score || 0));
+  // Recalculate ranks for all remaining players and results properly
+  const remainingRanked = await recalculateAllGameRankings(gameId);
 
-  const rankBatch = writeBatch(db);
-  remainingPlayers.forEach((pDoc, idx) => {
-    const newRank = idx + 1;
-    rankBatch.update(pDoc.ref, { rank: newRank });
-    const resRef = doc(db, `games/${gameId}/results`, pDoc.id);
-    if (resultsSnap.docs.some((r) => r.id === pDoc.id)) {
-      rankBatch.update(resRef, { rank: newRank });
-    }
+  await updateDoc(doc(db, 'games', gameId), {
+    playerCount: remainingRanked.length,
   });
 
-  rankBatch.update(doc(db, 'games', gameId), {
-    playerCount: remainingPlayers.length,
-  });
-
-  await rankBatch.commit();
   prefetchedPinCache = null;
 
-  return { remainingCount: remainingPlayers.length };
+  return { remainingCount: remainingRanked.length };
 }
 
 export function exportGameResultsToCsv(

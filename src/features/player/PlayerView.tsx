@@ -8,6 +8,7 @@ import {
   completePlayerSelfPacedSession,
   isPastDueDate,
   isLegacyMockQuestion,
+  sortPlayersProperly,
 } from '../../lib/game/gameEngine';
 import { soundManager } from '../../lib/sound/soundManager';
 import { getAvatarById } from '../../lib/avatars/avatarsCatalog';
@@ -260,7 +261,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
     const q = query(collection(db, `games/${gameId}/players`), orderBy('score', 'desc'));
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Player));
-      setTopPlayers(list);
+      setTopPlayers(sortPlayersProperly(list));
     });
     return () => unsub();
   }, [gameId]);
@@ -435,6 +436,13 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
   // COMPLETED SCREEN / FINAL SUMMARY
   if (isCompleted || allQuestions.length === 0) {
     const totalQuestionsCount = allQuestions.length || game?.totalQuestions || 1;
+    const computedRankIndex = topPlayers.findIndex((p) => p.id === playerId);
+    const currentRank =
+      computedRankIndex >= 0
+        ? computedRankIndex + 1
+        : playerData?.rank && playerData.rank > 0
+        ? playerData.rank
+        : null;
     return (
       <div className="min-h-[calc(100dvh-3.5rem)] sm:min-h-[calc(100dvh-4rem)] flex flex-col justify-center items-center gap-6 p-4 sm:p-8 pb-safe bg-gradient-to-b from-slate-950 via-indigo-950/60 to-slate-950 text-white">
         <div className="text-center">
@@ -454,9 +462,17 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
 
         {/* Personal Summary Card */}
         <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl text-center space-y-4">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">
-            Your Results Summary
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">
+              Your Results Summary
+            </h3>
+            {currentRank && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-xs font-black">
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                Rank #{currentRank}
+              </span>
+            )}
+          </div>
           <div className="grid grid-cols-3 gap-2 pt-2">
             <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
               <p className="text-[10px] text-slate-400 uppercase font-bold">Your Score</p>

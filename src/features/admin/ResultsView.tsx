@@ -6,6 +6,8 @@ import {
   exportGameResultsToCsv,
   deletePlayersFromGame,
   endGameSession,
+  recalculateAllGameRankings,
+  sortGameResultsProperly,
 } from '../../lib/game/gameEngine';
 import { getAvatarById } from '../../lib/avatars/avatarsCatalog';
 import {
@@ -49,9 +51,13 @@ export const ResultsView: React.FC = () => {
 
   const loadGameResults = async (game: Game) => {
     try {
-      const resSnap = await getDocs(
-        query(collection(db, `games/${game.id}/results`), orderBy('rank', 'asc'))
-      );
+      const recalculated = await recalculateAllGameRankings(game.id);
+      if (recalculated.length > 0) {
+        setResults(recalculated);
+        return;
+      }
+
+      const resSnap = await getDocs(collection(db, `games/${game.id}/results`));
       if (!resSnap.empty) {
         const list = resSnap.docs.map((d) => {
           const data = d.data() as GameResult;
@@ -61,7 +67,7 @@ export const ResultsView: React.FC = () => {
             playerId: data.playerId || d.id,
           };
         });
-        setResults(list);
+        setResults(sortGameResultsProperly(list));
       } else {
         // Fallback: derive from players collection
         const pSnap = await getDocs(
@@ -85,10 +91,10 @@ export const ResultsView: React.FC = () => {
             totalQuestions: game.totalQuestions,
             accuracy,
             averageResponseTime: 4.5,
-            createdAt: new Date().toISOString(),
+            createdAt: p.joinedAt || new Date().toISOString(),
           };
         });
-        setResults(fallbackResults);
+        setResults(sortGameResultsProperly(fallbackResults));
       }
     } catch (err) {
       console.error('Error fetching results:', err);

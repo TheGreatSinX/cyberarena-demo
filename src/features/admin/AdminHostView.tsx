@@ -3,7 +3,7 @@ import { doc, collection, onSnapshot, query, orderBy, deleteDoc, updateDoc } fro
 import QRCode from 'qrcode';
 import { db } from '../../lib/firebase/config';
 import { Game, GameQuestionSnapshot, Player, AnswerSubmission } from '../../types';
-import { advanceGameState } from '../../lib/game/gameEngine';
+import { advanceGameState, sortPlayersProperly } from '../../lib/game/gameEngine';
 import { getAvatarById } from '../../lib/avatars/avatarsCatalog';
 import {
   Users,
@@ -135,7 +135,7 @@ export const AdminHostView: React.FC<AdminHostViewProps> = ({ gameId, onFinishGa
     const pQuery = query(collection(db, `games/${gameId}/players`), orderBy('score', 'desc'));
     const unsub = onSnapshot(pQuery, (snap) => {
       const pList = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Player));
-      setPlayers(pList);
+      setPlayers(sortPlayersProperly(pList));
     });
     return () => unsub();
   }, [gameId]);

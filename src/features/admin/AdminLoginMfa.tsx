@@ -26,6 +26,8 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
     profile,
     mfaChallengePending,
     isMfaVerified,
+    idleLogoutNotice,
+    clearIdleLogoutNotice,
     loginWithEmailPassword,
     signInWithGoogleAdmin,
     generateTotpSetup,
@@ -298,6 +300,16 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
             Sign in with an authorized administrator account provisioned by a Super Admin.
           </p>
         </div>
+
+        {idleLogoutNotice && !error && (
+          <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs mb-5">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-bold text-amber-300">Session Timed Out (10m Idle Limit)</p>
+              <p className="mt-0.5 text-amber-200/90">{idleLogoutNotice}</p>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs mb-5">

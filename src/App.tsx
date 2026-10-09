@@ -50,12 +50,17 @@ const AppContent: React.FC = () => {
     }
   }, [currentView]);
 
-  // Automatically return to landing or admin-login if admin is auto-logged out after 10 minutes of inactivity
+  // Automatically return to admin-login if admin is auto-logged out after 10 minutes of inactivity
   useEffect(() => {
-    if (!authLoading && !user && (currentView === 'admin-dashboard' || currentView === 'admin-host')) {
+    if (
+      !authLoading &&
+      (!user || !isMfaVerified) &&
+      (currentView === 'admin-dashboard' || currentView === 'admin-host')
+    ) {
+      setActiveHostGameId(null);
       setCurrentView('admin-login');
     }
-  }, [authLoading, user, currentView]);
+  }, [authLoading, user, isMfaVerified, currentView]);
 
   // 1. Initial Firestore connection test as mandated by skill
   useEffect(() => {
@@ -197,7 +202,7 @@ const AppContent: React.FC = () => {
               setCurrentView('landing');
             }}
           />
-        ) : currentView === 'admin-host' && activeHostGameId ? (
+        ) : currentView === 'admin-host' && activeHostGameId && user && isMfaVerified ? (
           <AdminHostView
             gameId={activeHostGameId}
             onFinishGame={() => {
