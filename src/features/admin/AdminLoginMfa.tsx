@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { useAuth } from '../../lib/auth/authContext';
 import {
+  isValidEmailAddress,
+  sanitizeEmail,
+  sanitizeNumericCode,
+} from '../../lib/utils/sanitize';
+import {
   ShieldAlert,
   ShieldCheck,
   Lock,
@@ -74,10 +79,15 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    const cleanEmail = sanitizeEmail(email);
+    if (!isValidEmailAddress(cleanEmail)) {
+      setError('Please enter a valid administrator email address.');
+      return;
+    }
     setLoading(true);
 
     try {
-      await loginWithEmailPassword(email.trim(), password);
+      await loginWithEmailPassword(cleanEmail, password);
     } catch (err: any) {
       setError(err?.message || 'Authentication failed. Please check your credentials.');
     } finally {
@@ -101,14 +111,15 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
     e.preventDefault();
     setError(null);
     setResetSuccess(null);
-    if (!email.trim()) {
-      setError('Please enter your email address.');
+    const cleanEmail = sanitizeEmail(email);
+    if (!isValidEmailAddress(cleanEmail)) {
+      setError('Please enter a valid administrator email address.');
       return;
     }
     setLoading(true);
     try {
-      await resetPassword(email.trim());
-      setResetSuccess(`Password reset email sent to ${email.trim()}. Please check your inbox and spam folder.`);
+      await resetPassword(cleanEmail);
+      setResetSuccess(`Password reset email sent to ${cleanEmail}. Please check your inbox and spam folder.`);
     } catch (err: any) {
       setError(err?.message || 'Failed to send password reset email.');
     } finally {
@@ -119,14 +130,15 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
   const handleEnrollMfa = async (e: React.FormEvent) => {
     e.preventDefault();
     setMfaError(null);
-    if (mfaCode.trim().length !== 6) {
+    const cleanCode = sanitizeNumericCode(mfaCode, 6);
+    if (cleanCode.length !== 6) {
       setMfaError('Please enter a valid 6-digit code.');
       return;
     }
 
     try {
       setMfaVerifying(true);
-      const verified = await enrollMfa(totpSecret, mfaCode);
+      const verified = await enrollMfa(totpSecret, cleanCode);
       if (!verified) {
         setMfaError('Invalid code. Please ensure your clock is synchronized and try again.');
       } else {
@@ -142,14 +154,15 @@ export const AdminLoginMfa: React.FC<AdminLoginMfaProps> = ({ onSuccess }) => {
   const handleVerifyChallenge = async (e: React.FormEvent) => {
     e.preventDefault();
     setMfaError(null);
-    if (mfaCode.trim().length !== 6) {
+    const cleanCode = sanitizeNumericCode(mfaCode, 6);
+    if (cleanCode.length !== 6) {
       setMfaError('Please enter a 6-digit code.');
       return;
     }
 
     try {
       setMfaVerifying(true);
-      const verified = await verifyMfaToken(mfaCode);
+      const verified = await verifyMfaToken(cleanCode);
       if (!verified) {
         setMfaError('Invalid verification code.');
       } else {

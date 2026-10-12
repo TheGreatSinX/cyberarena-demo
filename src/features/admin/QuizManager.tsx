@@ -21,6 +21,16 @@ import {
   isLegacyMockQuestion,
 } from '../../lib/game/gameEngine';
 import { processUploadedQuestionImage } from '../../lib/utils/imageUpload';
+import { processUploadedMp4Video } from '../../lib/utils/videoUpload';
+import {
+  sanitizeFileName,
+  sanitizeIsoDate,
+  sanitizeLiveInput,
+  sanitizeNumericCode,
+  sanitizePlainText,
+  sanitizeSafeUrl,
+} from '../../lib/utils/sanitize';
+import { VideoPlayer } from '../../components/VideoPlayer';
 import QRCode from 'qrcode';
 import {
   Plus,
@@ -41,6 +51,8 @@ import {
   X,
   FileCheck,
   ImagePlus,
+  Film,
+  Video,
   KeyRound,
   Calendar,
   RefreshCw,
@@ -77,6 +89,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
     status: QuizStatus;
     gamePin: string;
     dueDate: string;
+    videoUrl: string | null;
+    videoFileName: string | null;
   }>({
     title: '',
     description: '',
@@ -84,7 +98,13 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
     status: 'PUBLISHED',
     gamePin: '',
     dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+    videoUrl: null,
+    videoFileName: null,
   });
+  const [uploadingQuizVideo, setUploadingQuizVideo] = useState(false);
+  const [quizVideoProgress, setQuizVideoProgress] = useState(0);
+  const [quizVideoError, setQuizVideoError] = useState<string | null>(null);
+  const quizVideoInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Inline PIN & Due Date management for selectedQuiz
   const [pinInput, setPinInput] = useState('');
@@ -250,6 +270,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
   const handleOpenCreateQuiz = () => {
     setQuizModalMode('create');
     setQuizToEdit(null);
+    setQuizVideoError(null);
+    setQuizVideoProgress(0);
     setQuizForm({
       title: '',
       description: '',
@@ -257,6 +279,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
       status: 'PUBLISHED',
       gamePin: generateCryptoPin(),
       dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      videoUrl: null,
+      videoFileName: null,
     });
     setIsQuizModalOpen(true);
   };
@@ -264,6 +288,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
   const handleOpenEditQuiz = (quiz: Quiz) => {
     setQuizModalMode('edit');
     setQuizToEdit(quiz);
+    setQuizVideoError(null);
+    setQuizVideoProgress(0);
     setQuizForm({
       title: quiz.title,
       description: quiz.description || '',
@@ -271,37 +297,72 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
       status: quiz.status,
       gamePin: quiz.gamePin || generateCryptoPin(),
       dueDate: quiz.dueDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      videoUrl: quiz.videoUrl || null,
+      videoFileName: quiz.videoFileName || null,
     });
     setIsQuizModalOpen(true);
   };
 
+  const handleQuizVideoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingQuizVideo(true);
+      setQuizVideoProgress(0);
+      setQuizVideoError(null);
+      const uploaded = await processUploadedMp4Video(file, (pct) => setQuizVideoProgress(pct));
+      setQuizForm((prev) => ({
+        ...prev,
+        videoUrl: uploaded.videoUrl,
+        videoFileName: uploaded.videoFileName,
+      }));
+    } catch (err: any) {
+      setQuizVideoError(err?.message || 'Failed to upload .mp4 video.');
+    } finally {
+      setUploadingQuizVideo(false);
+      if (quizVideoInputRef.current) {
+        quizVideoInputRef.current.value = '';
+      }
+    }
+  };
+
   const handleSaveQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !quizForm.title.trim()) return;
+    const cleanTitle = sanitizePlainText(quizForm.title, { maxLength: 120 });
+    if (!user || !cleanTitle) return;
 
     try {
       setActionLoading(true);
-      const cleanPin = quizForm.gamePin.replace(/\D/g, '').slice(0, 6) || generateCryptoPin();
-      const cleanDue = quizForm.dueDate || null;
+      const cleanDesc = sanitizePlainText(quizForm.description, { maxLength: 500, allowNewlines: true });
+      const cleanCategory = sanitizePlainText(quizForm.category, { maxLength: 60 }) || 'General';
+      const cleanPin = sanitizeNumericCode(quizForm.gamePin, 6) || generateCryptoPin();
+      const cleanDue = sanitizeIsoDate(quizForm.dueDate) || null;
+      const safeVideoUrl = quizForm.videoUrl ? sanitizeSafeUrl(quizForm.videoUrl) || null : null;
+      const safeVideoFileName = quizForm.videoFileName
+        ? sanitizeFileName(quizForm.videoFileName, 120)
+        : null;
 
       if (quizModalMode === 'edit' && quizToEdit) {
         // Edit existing quiz without creating a duplicate
         const ref = doc(db, 'quizzes', quizToEdit.id);
         const updated = {
-          title: quizForm.title.trim(),
-          description: quizForm.description.trim(),
-          category: quizForm.category.trim(),
+          title: cleanTitle,
+          description: cleanDesc,
+          category: cleanCategory,
           status: quizForm.status,
           gamePin: cleanPin,
           dueDate: cleanDue,
+          videoUrl: safeVideoUrl,
+          videoFileName: safeVideoFileName,
           updatedAt: new Date().toISOString(),
         };
         await updateDoc(ref, updated);
         await syncQuizPinSession(quizToEdit.id, user.uid, cleanPin, cleanDue);
         await writeAuditEntry('QUIZ_UPDATED', 'quizzes', quizToEdit.id, {
-          title: quizForm.title,
+          title: cleanTitle,
           gamePin: cleanPin,
           dueDate: cleanDue,
+          hasVideo: Boolean(safeVideoUrl),
         });
         if (selectedQuiz?.id === quizToEdit.id) {
           setSelectedQuiz((prev) => (prev ? { ...prev, ...updated } : null));
@@ -312,13 +373,15 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
         // Create new quiz
         const ref = doc(collection(db, 'quizzes'));
         const newQuiz = {
-          title: quizForm.title.trim(),
-          description: quizForm.description.trim(),
-          category: quizForm.category.trim(),
+          title: cleanTitle,
+          description: cleanDesc,
+          category: cleanCategory,
           status: quizForm.status,
           questionCount: 0,
           gamePin: cleanPin,
           dueDate: cleanDue,
+          videoUrl: safeVideoUrl,
+          videoFileName: safeVideoFileName,
           createdBy: user.uid,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -326,9 +389,10 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
         await setDoc(ref, newQuiz);
         await syncQuizPinSession(ref.id, user.uid, cleanPin, cleanDue);
         await writeAuditEntry('QUIZ_CREATED', 'quizzes', ref.id, {
-          title: quizForm.title,
+          title: cleanTitle,
           gamePin: cleanPin,
           dueDate: cleanDue,
+          hasVideo: Boolean(safeVideoUrl),
         });
       }
       setIsQuizModalOpen(false);
@@ -437,6 +501,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
         title: `${quiz.title} (Copy)`,
         description: quiz.description,
         category: quiz.category,
+        videoUrl: quiz.videoUrl || null,
+        videoFileName: quiz.videoFileName || null,
         status: 'DRAFT',
         questionCount: quiz.questionCount || 0,
         createdBy: user.uid,
@@ -486,7 +552,31 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
     try {
       setActionLoading(true);
       const questionId = q.id?.trim();
-      const { id: _ignored, ...dataToSave } = q;
+      const { id: _ignored, ...rawQuestion } = q;
+
+      const sanitizedOptions = (rawQuestion.options || []).map((opt, idx) => ({
+        id: opt.id || `opt_${idx + 1}`,
+        text: sanitizePlainText(opt.text, { maxLength: 200 }),
+        sortOrder: typeof opt.sortOrder === 'number' ? opt.sortOrder : idx,
+      }));
+
+      const dataToSave = {
+        ...rawQuestion,
+        questionText: sanitizePlainText(rawQuestion.questionText, {
+          maxLength: 300,
+          allowNewlines: true,
+        }),
+        explanation: sanitizePlainText(rawQuestion.explanation || '', {
+          maxLength: 400,
+          allowNewlines: true,
+        }),
+        imageUrl: rawQuestion.imageUrl ? sanitizeSafeUrl(rawQuestion.imageUrl) || null : null,
+        videoUrl: rawQuestion.videoUrl ? sanitizeSafeUrl(rawQuestion.videoUrl) || null : null,
+        videoFileName: rawQuestion.videoFileName
+          ? sanitizeFileName(rawQuestion.videoFileName, 120)
+          : null,
+        options: sanitizedOptions,
+      };
 
       if (questionId) {
         // Edit existing question directly in Firestore
@@ -700,6 +790,13 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 text-[11px] font-mono">
                         <Calendar className="w-3 h-3 text-[#F05A28]" />
                         <span>Due: {quiz.dueDate}</span>
+                      </span>
+                    )}
+
+                    {quiz.videoUrl && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0D1F3C] border border-[#00A191]/40 text-[#00A191] text-[11px] font-bold">
+                        <Film className="w-3 h-3" />
+                        <span>MP4 Video</span>
                       </span>
                     )}
 
@@ -1004,6 +1101,28 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                 </div>
               </div>
 
+              {/* Selected Quiz Video Preview if uploaded */}
+              {selectedQuiz.videoUrl && (
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#00A191]">
+                      <Film className="w-4 h-4" />
+                      <span>Quiz Briefing Video (.mp4)</span>
+                    </div>
+                    {selectedQuiz.videoFileName && (
+                      <span className="text-[11px] font-mono text-slate-400 truncate max-w-[220px]">
+                        {selectedQuiz.videoFileName}
+                      </span>
+                    )}
+                  </div>
+                  <VideoPlayer
+                    videoUrl={selectedQuiz.videoUrl}
+                    videoFileName={selectedQuiz.videoFileName}
+                    maxHeightClass="max-h-52"
+                  />
+                </div>
+              )}
+
               {/* Questions List */}
               <div className="space-y-3">
                 {questions.length === 0 ? (
@@ -1025,16 +1144,28 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-sm text-white line-clamp-2">{q.questionText}</p>
-                          {q.imageUrl && (
-                            <div className="mt-2">
-                              <img
-                                src={q.imageUrl}
-                                alt="Question attachment"
-                                className="h-14 w-auto max-w-[140px] rounded-lg object-cover border border-slate-700"
-                              />
+                          {(q.imageUrl || q.videoUrl) && (
+                            <div className="mt-2 flex flex-wrap items-start gap-3">
+                              {q.imageUrl && (
+                                <img
+                                  src={q.imageUrl}
+                                  alt="Question attachment"
+                                  className="h-16 w-auto max-w-[140px] rounded-lg object-cover border border-slate-700"
+                                />
+                              )}
+                              {q.videoUrl && (
+                                <div className="w-full max-w-xs">
+                                  <VideoPlayer
+                                    videoUrl={q.videoUrl}
+                                    videoFileName={q.videoFileName}
+                                    maxHeightClass="max-h-28"
+                                    showFileNameBadge
+                                  />
+                                </div>
+                              )}
                             </div>
                           )}
-                          <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
+                          <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-400">
                             <span className="flex items-center gap-1">
                               <Clock className="w-3 h-3 text-slate-500" />
                               {q.timeLimitSeconds}s
@@ -1043,6 +1174,12 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                               <Award className="w-3 h-3 text-amber-500" />
                               {q.points} pts
                             </span>
+                            {q.videoUrl && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-[#00A191] bg-[#00A191]/10 px-2 py-0.5 rounded border border-[#00A191]/30">
+                                <Film className="w-3 h-3" />
+                                <span>.MP4 Video</span>
+                              </span>
+                            )}
                             <span className="text-[10px] uppercase font-bold text-indigo-400">
                               {q.questionType === 'TRUE_FALSE'
                                 ? 'True / False'
@@ -1104,8 +1241,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
 
       {/* QUIZ CREATE/EDIT MODAL */}
       {isQuizModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0D1F3C] border-2 border-[#00A191]/40 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0D1F3C] border-2 border-[#00A191]/40 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 my-6">
             <div className="flex items-center justify-between pb-3 border-b border-[#E5E5E5]/20">
               <h3 className="font-black text-lg text-white">
                 {quizModalMode === 'edit' ? 'Edit Quiz Details' : 'Create New Quiz'}
@@ -1134,7 +1271,7 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-300 mb-1">Description</label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={quizForm.description}
                   onChange={(e) => setQuizForm({ ...quizForm, description: e.target.value })}
                   placeholder="Short brief of this quiz challenge..."
@@ -1474,10 +1611,17 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [videoProgress, setVideoProgress] = useState(0);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const videoInputRef = React.useRef<HTMLInputElement | null>(null);
+
   // Update local form whenever the passed question prop changes
   useEffect(() => {
     setForm({ ...question });
     setImageError(null);
+    setVideoError(null);
+    setVideoProgress(0);
   }, [question]);
 
   const handleImageFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1498,18 +1642,44 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
     }
   };
 
+  const handleVideoFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingVideo(true);
+      setVideoProgress(0);
+      setVideoError(null);
+      const uploaded = await processUploadedMp4Video(file, (pct) => setVideoProgress(pct));
+      setForm((prev) => ({
+        ...prev,
+        videoUrl: uploaded.videoUrl,
+        videoFileName: uploaded.videoFileName,
+      }));
+    } catch (err: any) {
+      setVideoError(err?.message || 'Failed to upload .mp4 video.');
+    } finally {
+      setUploadingVideo(false);
+      if (videoInputRef.current) {
+        videoInputRef.current.value = '';
+      }
+    }
+  };
+
   const handleOptionChange = (idx: number, text: string) => {
     const nextOpts = [...form.options];
-    nextOpts[idx].text = text;
+    nextOpts[idx].text = sanitizeLiveInput(text, 200, false);
     setForm({ ...form, options: nextOpts });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.questionText.trim()) return;
+    const cleanPrompt = sanitizePlainText(form.questionText, { maxLength: 300, allowNewlines: true });
+    if (!cleanPrompt) return;
     // Explicitly guarantee question.id is preserved so it updates the existing question
     onSave({
       ...form,
+      questionText: cleanPrompt,
+      explanation: sanitizePlainText(form.explanation || '', { maxLength: 400, allowNewlines: true }),
       id: question.id,
     });
   };
@@ -1587,6 +1757,77 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
                   type="button"
                   onClick={() => setForm({ ...form, imageUrl: null })}
                   title="Remove Image"
+                  className="absolute top-3 right-3 p-1.5 rounded-xl bg-slate-900/90 hover:bg-rose-600 text-slate-300 hover:text-white border border-slate-700 cursor-pointer transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Question Video (.mp4) Upload */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-400">
+                  Question Video (.mp4) (Optional)
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  Upload a .mp4 video clip to display with this question (up to 25 MB).
+                </p>
+              </div>
+              <input
+                ref={videoInputRef}
+                type="file"
+                accept=".mp4,video/mp4"
+                onChange={handleVideoFileSelect}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => videoInputRef.current?.click()}
+                disabled={uploadingVideo}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0D1F3C] hover:bg-[#162f59] text-[#00A191] border border-[#00A191]/40 text-xs font-bold cursor-pointer transition-colors disabled:opacity-50"
+              >
+                {uploadingVideo ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Uploading {videoProgress}%</span>
+                  </>
+                ) : (
+                  <>
+                    <Video className="w-3.5 h-3.5" />
+                    <span>{form.videoUrl ? 'Change .mp4 Video' : 'Upload .mp4 Video'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {uploadingVideo && (
+              <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden border border-slate-800">
+                <div
+                  className="h-full bg-gradient-to-r from-[#00A191] to-[#F05A28] transition-all duration-200"
+                  style={{ width: `${videoProgress}%` }}
+                />
+              </div>
+            )}
+
+            {videoError && (
+              <p className="text-xs text-[#F05A28] font-medium">{videoError}</p>
+            )}
+
+            {form.videoUrl && !uploadingVideo && (
+              <div className="relative pt-1">
+                <VideoPlayer
+                  videoUrl={form.videoUrl}
+                  videoFileName={form.videoFileName}
+                  maxHeightClass="max-h-48"
+                  showFileNameBadge
+                />
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, videoUrl: null, videoFileName: null })}
+                  title="Remove .mp4 Video"
                   className="absolute top-3 right-3 p-1.5 rounded-xl bg-slate-900/90 hover:bg-rose-600 text-slate-300 hover:text-white border border-slate-700 cursor-pointer transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />

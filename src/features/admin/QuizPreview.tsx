@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, doc, getDoc, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '../../lib/firebase/config';
 import { Quiz, Question } from '../../types';
+import { VideoPlayer } from '../../components/VideoPlayer';
 import { Clock, ArrowLeft, ArrowRight, CheckCircle2, XCircle, RotateCcw, Smartphone, Monitor } from 'lucide-react';
 
 interface QuizPreviewProps {
@@ -129,6 +130,15 @@ export const QuizPreview: React.FC<QuizPreviewProps> = ({ quizId, onClose }) => 
                   src={currentQ.imageUrl}
                   alt="Question preview"
                   className="max-h-40 w-auto rounded-xl object-contain border border-slate-700/80 bg-slate-950/60 p-1"
+                />
+              </div>
+            )}
+            {(currentQ?.videoUrl || (currentIndex === 0 && quiz.videoUrl)) && (
+              <div className="flex justify-center pt-1">
+                <VideoPlayer
+                  videoUrl={currentQ?.videoUrl || quiz.videoUrl}
+                  videoFileName={currentQ?.videoFileName || quiz.videoFileName}
+                  maxHeightClass="max-h-44"
                 />
               </div>
             )}

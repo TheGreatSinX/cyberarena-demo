@@ -1,5 +1,12 @@
 import { WeeklyEmailTemplate, WeeklyQuestion, WeeklyQuestionnaire, WeeklySubmission } from '../../types/weekly';
 import csamThemeBgUrl from '../../assets/images/csam_2026_theme_bg_1791285987388.jpg';
+import {
+  escapeHtmlEntities,
+  sanitizeCsvCell,
+  sanitizeEmailHtml,
+  sanitizeSafeIdentifier,
+  sanitizeSafeUrl,
+} from '../../lib/utils/sanitize';
 
 export const DEFAULT_EMAIL_BACKGROUND_URL = csamThemeBgUrl;
 
@@ -34,36 +41,38 @@ export interface EmailTemplateVariables {
   passing_score: string;
 }
 
-export function interpolateTemplate(text: string, vars: EmailTemplateVariables): string {
+export function interpolateTemplate(text: string, vars: EmailTemplateVariables, escapeValues = false): string {
   if (!text) return '';
+  const fmt = (val: string) => (escapeValues ? escapeHtmlEntities(val) : val);
+  const safeLink = sanitizeSafeUrl(vars.questionnaire_link) || '#';
   return text
-    .replace(/\{\{\s*recipient_name\s*\}\}/gi, vars.recipient_name)
-    .replace(/\{\{\s*name\s*\}\}/gi, vars.recipient_name)
-    .replace(/\{\{\s*recipient_email\s*\}\}/gi, vars.recipient_email)
-    .replace(/\{\{\s*email\s*\}\}/gi, vars.recipient_email)
-    .replace(/\{\{\s*department\s*\}\}/gi, vars.department)
-    .replace(/\{\{\s*questionnaire_title\s*\}\}/gi, vars.questionnaire_title)
-    .replace(/\{\{\s*title\s*\}\}/gi, vars.questionnaire_title)
-    .replace(/\{\{\s*week_label\s*\}\}/gi, vars.week_label)
-    .replace(/\{\{\s*due_date\s*\}\}/gi, vars.due_date)
-    .replace(/\{\{\s*questionnaire_link\s*\}\}/gi, vars.questionnaire_link)
-    .replace(/\{\{\s*link\s*\}\}/gi, vars.questionnaire_link)
-    .replace(/\{\{\s*question_count\s*\}\}/gi, vars.question_count)
-    .replace(/\{\{\s*passing_score\s*\}\}/gi, vars.passing_score);
+    .replace(/\{\{\s*recipient_name\s*\}\}/gi, fmt(vars.recipient_name))
+    .replace(/\{\{\s*name\s*\}\}/gi, fmt(vars.recipient_name))
+    .replace(/\{\{\s*recipient_email\s*\}\}/gi, fmt(vars.recipient_email))
+    .replace(/\{\{\s*email\s*\}\}/gi, fmt(vars.recipient_email))
+    .replace(/\{\{\s*department\s*\}\}/gi, fmt(vars.department))
+    .replace(/\{\{\s*questionnaire_title\s*\}\}/gi, fmt(vars.questionnaire_title))
+    .replace(/\{\{\s*title\s*\}\}/gi, fmt(vars.questionnaire_title))
+    .replace(/\{\{\s*week_label\s*\}\}/gi, fmt(vars.week_label))
+    .replace(/\{\{\s*due_date\s*\}\}/gi, fmt(vars.due_date))
+    .replace(/\{\{\s*questionnaire_link\s*\}\}/gi, safeLink)
+    .replace(/\{\{\s*link\s*\}\}/gi, safeLink)
+    .replace(/\{\{\s*question_count\s*\}\}/gi, fmt(vars.question_count))
+    .replace(/\{\{\s*passing_score\s*\}\}/gi, fmt(vars.passing_score));
 }
 
 export function buildWeeklyQuestionnaireUrl(questionnaireId: string, token?: string): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const params = new URLSearchParams();
-  params.set('weekly', questionnaireId);
+  params.set('weekly', sanitizeSafeIdentifier(questionnaireId));
   if (token) {
-    params.set('token', token);
+    params.set('token', sanitizeSafeIdentifier(token));
   }
   return `${origin}/?${params.toString()}`;
 }
 
 export function resolveAbsoluteAssetUrl(urlOrPath?: string | null): string {
-  const raw = urlOrPath || '/csam-2026-bg.jpg';
+  const raw = sanitizeSafeUrl(urlOrPath) || '/csam-2026-bg.jpg';
   if (!raw) return '';
   if (raw.startsWith('data:') || raw.startsWith('http://') || raw.startsWith('https://')) {
     return raw;
@@ -79,18 +88,28 @@ export function generateWeeklyEmailHtml(
   vars: EmailTemplateVariables
 ): string {
   if (template.customHtmlOverride && template.customHtmlOverride.trim().length > 0) {
-    return interpolateTemplate(template.customHtmlOverride, vars);
+    const sanitizedOverride = sanitizeEmailHtml(template.customHtmlOverride);
+    return interpolateTemplate(sanitizedOverride, vars, true);
   }
 
-  const accent = template.accentColor || '#F05A28';
+  const accent = /^#[0-9a-fA-F]{3,8}$/.test(template.accentColor || '')
+    ? template.accentColor
+    : '#F05A28';
   const bgUrl = resolveAbsoluteAssetUrl(template.backgroundImageUrl || csamThemeBgUrl);
-  const bannerSubtitle = interpolateTemplate(template.bannerSubtitle, vars);
-  const heading = interpolateTemplate(template.heading, vars);
-  const greeting = interpolateTemplate(template.greeting, vars);
-  const introParagraph = interpolateTemplate(template.introParagraph, vars);
-  const ctaText = interpolateTemplate(template.ctaButtonText, vars);
-  const tipBox = interpolateTemplate(template.securityTipBox, vars);
-  const footerText = interpolateTemplate(template.footerText, vars);
+  const bannerSubtitle = escapeHtmlEntities(interpolateTemplate(template.bannerSubtitle, vars));
+  const heading = escapeHtmlEntities(interpolateTemplate(template.heading, vars));
+  const greeting = escapeHtmlEntities(interpolateTemplate(template.greeting, vars));
+  const introParagraph = escapeHtmlEntities(interpolateTemplate(template.introParagraph, vars));
+  const ctaText = escapeHtmlEntities(interpolateTemplate(template.ctaButtonText, vars));
+  const tipBox = escapeHtmlEntities(interpolateTemplate(template.securityTipBox, vars));
+  const footerText = escapeHtmlEntities(interpolateTemplate(template.footerText, vars));
+  const safeWeekLabel = escapeHtmlEntities(vars.week_label);
+  const safeDueDate = escapeHtmlEntities(vars.due_date);
+  const safeRecipientName = escapeHtmlEntities(vars.recipient_name);
+  const safeRecipientEmail = escapeHtmlEntities(vars.recipient_email);
+  const safeQuestionCount = escapeHtmlEntities(vars.question_count);
+  const safePassingScore = escapeHtmlEntities(vars.passing_score);
+  const safeLink = sanitizeSafeUrl(vars.questionnaire_link) || '#';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -126,7 +145,7 @@ export function generateWeeklyEmailHtml(
             <tr>
               <td style="padding:28px 32px;background-color:rgba(8,20,40,0.84);">
                 <div style="display:inline-block;padding:4px 12px;border-radius:999px;background-color:rgba(240,90,40,0.2);border:1px solid ${accent};color:${accent};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:14px;">
-                  ${vars.week_label} • Due: ${vars.due_date}
+                  ${safeWeekLabel} • Due: ${safeDueDate}
                 </div>
 
                 <h1 style="margin:0 0 16px 0;font-size:22px;line-height:1.35;font-weight:800;color:#ffffff;">
@@ -146,11 +165,11 @@ export function generateWeeklyEmailHtml(
                   <tr>
                     <td style="padding:14px 18px;font-size:12px;color:#cbd5e1;">
                       <strong style="color:#ffffff;display:block;margin-bottom:2px;">Assigned To</strong>
-                      ${vars.recipient_name} (${vars.recipient_email})
+                      ${safeRecipientName} (${safeRecipientEmail})
                     </td>
                     <td style="padding:14px 18px;font-size:12px;color:#cbd5e1;text-align:right;">
                       <strong style="color:#20d8c4;display:block;margin-bottom:2px;">Assessment Info</strong>
-                      ${vars.question_count} Questions • Pass: ${vars.passing_score}%
+                      ${safeQuestionCount} Questions • Pass: ${safePassingScore}%
                     </td>
                   </tr>
                 </table>
@@ -159,7 +178,7 @@ export function generateWeeklyEmailHtml(
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 26px auto;">
                   <tr>
                     <td align="center" style="border-radius:12px;background-color:${accent};box-shadow:0 8px 20px rgba(240,90,40,0.35);">
-                      <a href="${vars.questionnaire_link}" target="_blank" style="display:inline-block;padding:15px 32px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:12px;">
+                      <a href="${safeLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:15px 32px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:12px;">
                         ${ctaText} &rarr;
                       </a>
                     </td>
@@ -215,10 +234,7 @@ export function exportWeeklySubmissionsToCsv(
     ...questionHeaders,
   ];
 
-  const escapeCsv = (val: unknown) => {
-    const str = String(val ?? '');
-    return `"${str.replace(/"/g, '""')}"`;
-  };
+  const escapeCsv = (val: unknown) => sanitizeCsvCell(val);
 
   const rows = submissions.map((s) => {
     const qCols: string[] = [];

@@ -24,6 +24,13 @@ import {
   GameResult,
 } from '../../types';
 import { handleFirestoreError, OperationType } from '../firebase/errors';
+import {
+  sanitizeCsvCell,
+  sanitizeNumericCode,
+  sanitizePersonName,
+  sanitizeSafeIdentifier,
+  sanitizeSafeUrl,
+} from '../utils/sanitize';
 
 // In-memory prefetch cache so entering a 6-digit PIN on the Landing page resolves the quiz/game in background
 interface PrefetchedPinCache {
@@ -125,6 +132,8 @@ export async function prefetchPinSession(rawPin: string): Promise<void> {
             questionType: q.questionType,
             questionText: q.questionText,
             imageUrl: q.imageUrl || null,
+            videoUrl: q.videoUrl || null,
+            videoFileName: q.videoFileName || null,
             explanation: q.explanation || null,
             timeLimitSeconds: q.timeLimitSeconds || 20,
             points: q.points || 1000,
@@ -354,6 +363,8 @@ export async function syncQuizPinSession(
       await updateDoc(gameRef, {
         quizId,
         quizTitle: quizData.title,
+        quizVideoUrl: quizData.videoUrl || null,
+        quizVideoFileName: quizData.videoFileName || null,
         gamePin: finalPin,
         dueDate: finalDueDate,
         mode: 'SELF_PACED',
@@ -367,6 +378,8 @@ export async function syncQuizPinSession(
       await setDoc(gameRef, {
         quizId,
         quizTitle: quizData.title,
+        quizVideoUrl: quizData.videoUrl || null,
+        quizVideoFileName: quizData.videoFileName || null,
         gamePin: finalPin,
         dueDate: finalDueDate,
         mode: 'SELF_PACED',
@@ -417,6 +430,8 @@ export async function syncQuizPinSession(
         questionType: qData.questionType,
         questionText: qData.questionText,
         imageUrl: qData.imageUrl || null,
+        videoUrl: qData.videoUrl || null,
+        videoFileName: qData.videoFileName || null,
         explanation: qData.explanation || null,
         timeLimitSeconds: qData.timeLimitSeconds,
         points: qData.points,
@@ -476,12 +491,17 @@ export async function joinGameSession(
   alreadyCompleted?: boolean;
   preloadedQuestions?: GameQuestionSnapshot[];
 }> {
-  const nickname = rawNickname.trim().slice(0, 48);
-  if (!nickname) {
-    throw new Error('Please enter your full name.');
+  const nickname = sanitizePersonName(rawNickname, 48);
+  if (!nickname || nickname.length < 2) {
+    throw new Error('Please enter a valid full name (at least 2 characters).');
   }
 
-  const cleanPin = gamePin.trim().replace(/\D/g, '');
+  const cleanPin = sanitizeNumericCode(gamePin, 6);
+  if (cleanPin.length !== 6) {
+    throw new Error('Please enter a valid 6-digit Game PIN.');
+  }
+  const safeAvatarId = sanitizeSafeIdentifier(avatarId, 64) || 'blue_thinker';
+  const safeAvatarUrl = sanitizeSafeUrl(avatarUrl);
   let gameId = '';
   let gameData: Game | null = null;
   let preloadedQuestions: GameQuestionSnapshot[] = [];
@@ -576,6 +596,8 @@ export async function joinGameSession(
             questionType: q.questionType,
             questionText: q.questionText,
             imageUrl: q.imageUrl || null,
+            videoUrl: q.videoUrl || null,
+            videoFileName: q.videoFileName || null,
             explanation: q.explanation || null,
             timeLimitSeconds: q.timeLimitSeconds || 20,
             points: q.points || 1000,
@@ -597,6 +619,8 @@ export async function joinGameSession(
       const newGamePayload: Omit<Game, 'id'> = {
         quizId: targetQuizDoc.id,
         quizTitle: targetQuiz.title,
+        quizVideoUrl: targetQuiz.videoUrl || null,
+        quizVideoFileName: targetQuiz.videoFileName || null,
         gamePin: cleanPin,
         dueDate: effectiveDueDate,
         mode: 'SELF_PACED',
@@ -708,8 +732,8 @@ export async function joinGameSession(
 
   const playerId = `p_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const sessionToken = `st_${Math.random().toString(36).substring(2)}${Date.now()}`;
-  const finalAvatarId = avatarId || 'blue_thinker';
-  const finalAvatarUrl = avatarUrl || '';
+  const finalAvatarId = safeAvatarId;
+  const finalAvatarUrl = safeAvatarUrl;
   const nowIso = new Date().toISOString();
 
   // 4. Write new player and increment playerCount in parallel for fast entry
@@ -777,11 +801,16 @@ export async function submitPlayerAnswer(
   correctOptionId?: string;
   explanation?: string | null;
 }> {
+  const cleanGameId = sanitizeSafeIdentifier(gameId);
+  const cleanPlayerId = sanitizeSafeIdentifier(playerId);
+  const cleanQuestionId = sanitizeSafeIdentifier(questionId);
+  const cleanOptionId = sanitizeSafeIdentifier(selectedOptionId, 64) || 'TIME_EXPIRED';
+
   // Fetch game, player, existing answer, and private question data in parallel for fast evaluation
-  const gameRef = doc(db, 'games', gameId);
-  const playerRef = doc(db, `games/${gameId}/players`, playerId);
-  const answerRef = doc(db, `games/${gameId}/answers`, `${playerId}_${questionId}`);
-  const privateQRef = doc(db, `games/${gameId}/privateQuestions`, questionId);
+  const gameRef = doc(db, 'games', cleanGameId);
+  const playerRef = doc(db, `games/${cleanGameId}/players`, cleanPlayerId);
+  const answerRef = doc(db, `games/${cleanGameId}/answers`, `${cleanPlayerId}_${cleanQuestionId}`);
+  const privateQRef = doc(db, `games/${cleanGameId}/privateQuestions`, cleanQuestionId);
 
   const [gameSnap, playerSnap, answerSnap, privateQSnap] = await Promise.all([
     getDoc(gameRef),
@@ -893,10 +922,10 @@ export async function submitPlayerAnswer(
   // Commit answer, player score update, and live result summary in a single atomic batch
   const batch = writeBatch(db);
   batch.set(answerRef, {
-    playerId,
-    nickname: playerData.nickname,
-    questionId,
-    selectedOptionId: selectedOptionId || 'TIME_EXPIRED',
+    playerId: cleanPlayerId,
+    nickname: sanitizePersonName(playerData.nickname, 48),
+    questionId: cleanQuestionId,
+    selectedOptionId: cleanOptionId,
     isCorrect,
     pointsAwarded,
     responseTimeMs,
@@ -1261,25 +1290,26 @@ export function exportGameResultsToCsv(
   ];
 
   const rows = results.map((r) => [
-    `"${gameId}"`,
-    `"${quizTitle.replace(/"/g, '""')}"`,
-    `"${r.nickname.replace(/"/g, '""')}"`,
+    sanitizeCsvCell(gameId),
+    sanitizeCsvCell(quizTitle),
+    sanitizeCsvCell(r.nickname),
     r.rank,
     r.finalScore,
     r.correctAnswers,
     r.totalQuestions,
     `${r.accuracy}%`,
     r.averageResponseTime,
-    `"${gameStartedAt || ''}"`,
-    `"${gameEndedAt || ''}"`,
+    sanitizeCsvCell(gameStartedAt || ''),
+    sanitizeCsvCell(gameEndedAt || ''),
   ]);
 
   const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
+  const safeSlug = quizTitle.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 60) || 'Quiz';
   link.setAttribute('href', url);
-  link.setAttribute('download', `CYBER_ARENA_${quizTitle.replace(/\s+/g, '_')}_Results.csv`);
+  link.setAttribute('download', `CYBER_ARENA_${safeSlug}_Results.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

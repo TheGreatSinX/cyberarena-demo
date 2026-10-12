@@ -1,6 +1,9 @@
+import { validateSafeImageUpload } from './sanitize';
+
 /**
- * Reads an uploaded image file and compresses/resizes it on an HTML5 Canvas
- * so it can be reliably stored in Firestore documents without exceeding the 1MB document limit.
+ * Reads an uploaded image file, verifies its binary magic-byte signature and size,
+ * and re-encodes/resizes it on an HTML5 Canvas (stripping any EXIF/metadata payloads)
+ * so it can be reliably and safely stored in Firestore documents.
  */
 export async function processUploadedQuestionImage(
   file: File,
@@ -8,9 +11,7 @@ export async function processUploadedQuestionImage(
   maxHeight = 600,
   quality = 0.8
 ): Promise<string> {
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Please select a valid image file (PNG, JPG, WEBP, GIF).');
-  }
+  await validateSafeImageUpload(file);
 
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -26,6 +27,10 @@ export async function processUploadedQuestionImage(
       img.onerror = () => reject(new Error('Invalid image file format.'));
       img.onload = () => {
         let { width, height } = img;
+        if (width <= 0 || height <= 0 || width > 10000 || height > 10000) {
+          reject(new Error('Invalid image dimensions.'));
+          return;
+        }
         if (width > maxWidth || height > maxHeight) {
           const ratio = Math.min(maxWidth / width, maxHeight / height);
           width = Math.round(width * ratio);
@@ -37,7 +42,7 @@ export async function processUploadedQuestionImage(
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          resolve(dataUrl);
+          reject(new Error('Unable to initialize secure image canvas.'));
           return;
         }
 

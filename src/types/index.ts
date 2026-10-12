@@ -20,6 +20,8 @@ export interface Quiz {
   title: string;
   description: string;
   coverImageUrl?: string | null;
+  videoUrl?: string | null;
+  videoFileName?: string | null;
   category: string;
   status: QuizStatus;
   questionCount: number;
@@ -45,6 +47,8 @@ export interface Question {
   questionType: QuestionType;
   questionText: string;
   imageUrl?: string | null;
+  videoUrl?: string | null;
+  videoFileName?: string | null;
   explanation?: string | null;
   timeLimitSeconds: number;
   points: number;
@@ -61,6 +65,8 @@ export interface GameQuestionSnapshot {
   questionType: QuestionType;
   questionText: string;
   imageUrl?: string | null;
+  videoUrl?: string | null;
+  videoFileName?: string | null;
   explanation?: string | null;
   timeLimitSeconds: number;
   points: number;
@@ -81,6 +87,8 @@ export interface Game {
   id: string;
   quizId: string;
   quizTitle: string;
+  quizVideoUrl?: string | null;
+  quizVideoFileName?: string | null;
   gamePin: string;
   dueDate?: string | null;
   mode?: 'SELF_PACED' | 'LIVE';

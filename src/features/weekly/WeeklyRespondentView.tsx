@@ -10,6 +10,14 @@ import {
 } from '../../types/weekly';
 import { DEFAULT_EMAIL_BACKGROUND_URL } from './emailTemplateBuilder';
 import {
+  sanitizeEmail,
+  sanitizeLiveInput,
+  sanitizePersonName,
+  sanitizePlainText,
+  sanitizeSafeIdentifier,
+  sanitizeSafeUrl,
+} from '../../lib/utils/sanitize';
+import {
   ShieldCheck,
   CheckCircle2,
   XCircle,
@@ -55,7 +63,15 @@ export const WeeklyRespondentView: React.FC<WeeklyRespondentViewProps> = ({
         setLoading(true);
         setError(null);
 
-        const qRef = doc(db, 'weeklyQuestionnaires', questionnaireId);
+        const safeQId = sanitizeSafeIdentifier(questionnaireId);
+        const safeToken = inviteToken ? sanitizeSafeIdentifier(inviteToken) : null;
+        if (!safeQId) {
+          setError('Invalid questionnaire identifier.');
+          setLoading(false);
+          return;
+        }
+
+        const qRef = doc(db, 'weeklyQuestionnaires', safeQId);
         const qSnap = await getDoc(qRef);
         if (!qSnap.exists()) {
           setError('This Weekly Security Awareness Questionnaire could not be found or is no longer active.');
@@ -67,24 +83,24 @@ export const WeeklyRespondentView: React.FC<WeeklyRespondentViewProps> = ({
         setQuestionnaire(qData);
 
         // If an invite token is present, find the matching invitation and check if already submitted
-        if (inviteToken) {
+        if (safeToken) {
           const invQuery = query(
-            collection(db, `weeklyQuestionnaires/${questionnaireId}/invitations`),
-            where('token', '==', inviteToken)
+            collection(db, `weeklyQuestionnaires/${safeQId}/invitations`),
+            where('token', '==', safeToken)
           );
           const invSnap = await getDocs(invQuery);
           if (!invSnap.empty) {
             const invDoc = invSnap.docs[0];
             const invData = { id: invDoc.id, ...invDoc.data() } as WeeklyInvitation;
             setInvitation(invData);
-            setRecipientName(invData.recipientName || '');
-            setRecipientEmail(invData.recipientEmail || '');
-            setDepartment(invData.department || '');
+            setRecipientName(sanitizePersonName(invData.recipientName || '', 80));
+            setRecipientEmail(sanitizeEmail(invData.recipientEmail || ''));
+            setDepartment(sanitizePlainText(invData.department || '', { maxLength: 80 }));
 
             // Check if a submission already exists for this token
             const subQuery = query(
-              collection(db, `weeklyQuestionnaires/${questionnaireId}/submissions`),
-              where('token', '==', inviteToken)
+              collection(db, `weeklyQuestionnaires/${safeQId}/submissions`),
+              where('token', '==', safeToken)
             );
             const subSnap = await getDocs(subQuery);
             if (!subSnap.empty) {
@@ -115,12 +131,14 @@ export const WeeklyRespondentView: React.FC<WeeklyRespondentViewProps> = ({
     e.preventDefault();
     if (!questionnaire) return;
 
-    const cleanName = recipientName.trim();
-    const cleanEmail = (invitation?.recipientEmail || recipientEmail || '').trim().toLowerCase();
-    const cleanDept = department.trim() || 'General';
+    const cleanName = sanitizePersonName(recipientName, 80);
+    const cleanEmail = sanitizeEmail(invitation?.recipientEmail || recipientEmail || '');
+    const cleanDept = sanitizePlainText(department, { maxLength: 80 }) || 'General';
+    const safeQId = sanitizeSafeIdentifier(questionnaireId);
+    const safeToken = inviteToken ? sanitizeSafeIdentifier(inviteToken) : null;
 
     if (!cleanName || cleanName.length < 2) {
-      setError('Please enter your full name.');
+      setError('Please enter your full name (at least 2 characters).');
       return;
     }
 
@@ -184,13 +202,13 @@ export const WeeklyRespondentView: React.FC<WeeklyRespondentViewProps> = ({
       const passed = accuracy >= passingThreshold;
       const nowIso = new Date().toISOString();
 
-      const subRef = doc(collection(db, `weeklyQuestionnaires/${questionnaireId}/submissions`));
+      const subRef = doc(collection(db, `weeklyQuestionnaires/${safeQId}/submissions`));
       const submissionPayload: Omit<WeeklySubmission, 'id'> = {
-        questionnaireId,
-        questionnaireTitle: questionnaire.title,
-        weekLabel: questionnaire.weekLabel || 'Weekly Campaign',
+        questionnaireId: safeQId,
+        questionnaireTitle: sanitizePlainText(questionnaire.title, { maxLength: 160 }),
+        weekLabel: sanitizePlainText(questionnaire.weekLabel || 'Weekly Campaign', { maxLength: 80 }),
         invitationId: invitation?.id || null,
-        token: inviteToken || null,
+        token: safeToken,
         recipientEmail: cleanEmail,
         recipientName: cleanName,
         department: cleanDept,
@@ -249,7 +267,7 @@ export const WeeklyRespondentView: React.FC<WeeklyRespondentViewProps> = ({
     }
   };
 
-  const bgImageUrl = questionnaire?.emailTemplate?.backgroundImageUrl || DEFAULT_EMAIL_BACKGROUND_URL;
+  const bgImageUrl = sanitizeSafeUrl(questionnaire?.emailTemplate?.backgroundImageUrl) || DEFAULT_EMAIL_BACKGROUND_URL;
 
   if (loading) {
     return (
@@ -511,8 +529,9 @@ export const WeeklyRespondentView: React.FC<WeeklyRespondentViewProps> = ({
                     <input
                       type="text"
                       required
+                      maxLength={80}
                       value={recipientName}
-                      onChange={(e) => setRecipientName(e.target.value)}
+                      onChange={(e) => setRecipientName(sanitizeLiveInput(e.target.value, 80, false))}
                       placeholder="Jane Doe"
                       className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-[#00A191] text-sm text-white outline-none"
                     />
@@ -527,8 +546,9 @@ export const WeeklyRespondentView: React.FC<WeeklyRespondentViewProps> = ({
                     <Building2 className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                     <input
                       type="text"
+                      maxLength={80}
                       value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
+                      onChange={(e) => setDepartment(sanitizeLiveInput(e.target.value, 80, false))}
                       placeholder="e.g. Finance, Engineering"
                       className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-[#00A191] text-sm text-white outline-none"
                     />

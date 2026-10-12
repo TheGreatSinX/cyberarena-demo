@@ -12,6 +12,7 @@ import { AdminDashboard } from './features/admin/AdminDashboard';
 import { AdminHostView } from './features/admin/AdminHostView';
 import { WeeklyRespondentView } from './features/weekly/WeeklyRespondentView';
 import { GameQuestionSnapshot } from './types';
+import { sanitizeSafeIdentifier } from './lib/utils/sanitize';
 
 interface PlayerSession {
   playerId: string;
@@ -109,8 +110,10 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const handleUrlRoute = () => {
       const searchParams = new URLSearchParams(window.location.search);
-      const weeklyId = searchParams.get('weekly');
-      const weeklyToken = searchParams.get('token');
+      const rawWeeklyId = searchParams.get('weekly');
+      const rawWeeklyToken = searchParams.get('token');
+      const weeklyId = rawWeeklyId ? sanitizeSafeIdentifier(rawWeeklyId) : '';
+      const weeklyToken = rawWeeklyToken ? sanitizeSafeIdentifier(rawWeeklyToken) : null;
       if (weeklyId) {
         setWeeklyParams({ questionnaireId: weeklyId, token: weeklyToken });
         setCurrentView('weekly-respondent');

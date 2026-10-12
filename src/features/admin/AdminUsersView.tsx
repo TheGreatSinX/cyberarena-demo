@@ -3,6 +3,12 @@ import { collection, doc, getDocs, updateDoc, setDoc } from 'firebase/firestore'
 import { db } from '../../lib/firebase/config';
 import { useAuth } from '../../lib/auth/authContext';
 import { UserProfile, Role } from '../../types';
+import {
+  isValidEmailAddress,
+  sanitizeEmail,
+  sanitizeLiveInput,
+  sanitizePersonName,
+} from '../../lib/utils/sanitize';
 import { Shield, ShieldAlert, UserPlus, CheckCircle2, XCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 export const AdminUsersView: React.FC = () => {
@@ -38,11 +44,11 @@ export const AdminUsersView: React.FC = () => {
 
   const handleToggleDisabled = async (targetUser: UserProfile) => {
     if (!isSuperAdmin) {
-      alert('Only SUPER_ADMIN can modify account statuses.');
+      setError('Only SUPER_ADMIN can modify account statuses.');
       return;
     }
     if (targetUser.uid === user?.uid) {
-      alert('You cannot disable your own administrator account.');
+      setError('You cannot disable your own administrator account.');
       return;
     }
 
@@ -66,11 +72,11 @@ export const AdminUsersView: React.FC = () => {
 
   const handleRoleChange = async (targetUser: UserProfile, newRoleVal: Role) => {
     if (!isSuperAdmin) {
-      alert('Only SUPER_ADMIN can modify roles.');
+      setError('Only SUPER_ADMIN can modify roles.');
       return;
     }
     if (targetUser.uid === user?.uid) {
-      alert('You cannot change your own role.');
+      setError('You cannot change your own role.');
       return;
     }
 
@@ -90,10 +96,26 @@ export const AdminUsersView: React.FC = () => {
     e.preventDefault();
     if (!isSuperAdmin) return;
     setError(null);
+    const cleanEmail = sanitizeEmail(newEmail);
+    const cleanDisplayName = sanitizePersonName(newDisplayName, 80);
+
+    if (!cleanDisplayName || cleanDisplayName.length < 2) {
+      setError('Please enter a valid display name (at least 2 characters).');
+      return;
+    }
+    if (!isValidEmailAddress(cleanEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('Temporary password must be at least 6 characters.');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      await registerAdmin(newEmail.trim(), newPassword, newDisplayName.trim(), newRole);
+      await registerAdmin(cleanEmail, newPassword, cleanDisplayName, newRole);
       setIsAddOpen(false);
       setNewEmail('');
       setNewPassword('');
@@ -237,8 +259,9 @@ export const AdminUsersView: React.FC = () => {
                 <input
                   type="text"
                   required
+                  maxLength={80}
                   value={newDisplayName}
-                  onChange={(e) => setNewDisplayName(e.target.value)}
+                  onChange={(e) => setNewDisplayName(sanitizeLiveInput(e.target.value, 80, false))}
                   placeholder="e.g. Host John"
                   className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm outline-none focus:border-indigo-500"
                 />

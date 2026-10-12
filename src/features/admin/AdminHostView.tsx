@@ -5,6 +5,7 @@ import { db } from '../../lib/firebase/config';
 import { Game, GameQuestionSnapshot, Player, AnswerSubmission } from '../../types';
 import { advanceGameState, sortPlayersProperly } from '../../lib/game/gameEngine';
 import { getAvatarById } from '../../lib/avatars/avatarsCatalog';
+import { VideoPlayer } from '../../components/VideoPlayer';
 import {
   Users,
   Play,
@@ -529,6 +530,15 @@ export const AdminHostView: React.FC<AdminHostViewProps> = ({ gameId, onFinishGa
                   src={activeQuestion.imageUrl}
                   alt="Question visual"
                   className="max-h-56 sm:max-h-72 w-auto rounded-2xl object-contain border border-slate-700/80 bg-slate-950/60 p-1.5"
+                />
+              </div>
+            )}
+            {(activeQuestion?.videoUrl || ((game.currentQuestionIndex || 0) === 0 && game.quizVideoUrl)) && (
+              <div className="flex justify-center pt-1">
+                <VideoPlayer
+                  videoUrl={activeQuestion?.videoUrl || game.quizVideoUrl}
+                  videoFileName={activeQuestion?.videoFileName || game.quizVideoFileName}
+                  maxHeightClass="max-h-56 sm:max-h-72"
                 />
               </div>
             )}

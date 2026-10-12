@@ -31,6 +31,16 @@ import {
 } from './emailTemplateBuilder';
 import { processUploadedQuestionImage } from '../../lib/utils/imageUpload';
 import {
+  isValidEmailAddress,
+  sanitizeEmail,
+  sanitizeEmailHtml,
+  sanitizeIsoDate,
+  sanitizePersonName,
+  sanitizePlainText,
+  sanitizeSafeIdentifier,
+  sanitizeSafeUrl,
+} from '../../lib/utils/sanitize';
+import {
   Mail,
   FileSpreadsheet,
   Plus,
@@ -267,21 +277,26 @@ export const WeeklyAdminView: React.FC = () => {
   // Create or update a Weekly Questionnaire Campaign
   const handleSaveCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !campaignForm.title.trim()) return;
+    const cleanTitle = sanitizePlainText(campaignForm.title, { maxLength: 160 });
+    if (!user || !cleanTitle) return;
 
     try {
       setSaving(true);
       const nowIso = new Date().toISOString();
+      const cleanWeekLabel = sanitizePlainText(campaignForm.weekLabel, { maxLength: 80 }) || 'Weekly Campaign';
+      const cleanDesc = sanitizePlainText(campaignForm.description, { maxLength: 600, allowNewlines: true });
+      const cleanDue = sanitizeIsoDate(campaignForm.dueDate) || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+      const cleanPassScore = Math.min(100, Math.max(10, Number(campaignForm.passingScorePercent) || 80));
 
       if (campaignForm.id) {
         // Update existing campaign metadata
         const ref = doc(db, 'weeklyQuestionnaires', campaignForm.id);
         await updateDoc(ref, {
-          title: campaignForm.title.trim(),
-          weekLabel: campaignForm.weekLabel.trim(),
-          description: campaignForm.description.trim(),
-          dueDate: campaignForm.dueDate,
-          passingScorePercent: Number(campaignForm.passingScorePercent) || 80,
+          title: cleanTitle,
+          weekLabel: cleanWeekLabel,
+          description: cleanDesc,
+          dueDate: cleanDue,
+          passingScorePercent: cleanPassScore,
           status: campaignForm.status,
           updatedAt: nowIso,
         });
@@ -289,10 +304,11 @@ export const WeeklyAdminView: React.FC = () => {
       } else {
         // Optionally import questions from an existing Quiz, otherwise start empty
         let initialQuestions: WeeklyQuestion[] = [];
-        if (campaignForm.importQuizId) {
+        const cleanImportQuizId = sanitizeSafeIdentifier(campaignForm.importQuizId);
+        if (cleanImportQuizId) {
           const qSnap = await getDocs(
             query(
-              collection(db, `quizzes/${campaignForm.importQuizId}/questions`),
+              collection(db, `quizzes/${cleanImportQuizId}/questions`),
               orderBy('sortOrder', 'asc')
             )
           );
@@ -302,11 +318,14 @@ export const WeeklyAdminView: React.FC = () => {
               return {
                 id: d.id,
                 questionType: q.questionType,
-                questionText: q.questionText,
-                imageUrl: q.imageUrl || null,
-                explanation: q.explanation || '',
+                questionText: sanitizePlainText(q.questionText, { maxLength: 300, allowNewlines: true }),
+                imageUrl: q.imageUrl ? sanitizeSafeUrl(q.imageUrl) || null : null,
+                explanation: sanitizePlainText(q.explanation || '', { maxLength: 400, allowNewlines: true }),
                 points: 20,
-                options: q.options.map((o) => ({ id: o.id, text: o.text })),
+                options: q.options.map((o) => ({
+                  id: o.id,
+                  text: sanitizePlainText(o.text, { maxLength: 200 }),
+                })),
                 correctOptionId: q.correctOptionId,
               };
             });
@@ -315,11 +334,11 @@ export const WeeklyAdminView: React.FC = () => {
 
         const ref = doc(collection(db, 'weeklyQuestionnaires'));
         await setDoc(ref, {
-          title: campaignForm.title.trim(),
-          weekLabel: campaignForm.weekLabel.trim(),
-          description: campaignForm.description.trim(),
-          dueDate: campaignForm.dueDate,
-          passingScorePercent: Number(campaignForm.passingScorePercent) || 80,
+          title: cleanTitle,
+          weekLabel: cleanWeekLabel,
+          description: cleanDesc,
+          dueDate: cleanDue,
+          passingScorePercent: cleanPassScore,
           status: campaignForm.status,
           questions: initialQuestions,
           emailTemplate: DEFAULT_WEEKLY_EMAIL_TEMPLATE,
@@ -328,7 +347,7 @@ export const WeeklyAdminView: React.FC = () => {
           updatedAt: nowIso,
         });
         await writeAuditEntry('WEEKLY_CAMPAIGN_CREATED', 'weeklyQuestionnaires', ref.id, {
-          title: campaignForm.title.trim(),
+          title: cleanTitle,
         });
       }
 
@@ -357,17 +376,30 @@ export const WeeklyAdminView: React.FC = () => {
   // Save question inside selectedQ
   const handleSaveQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedQ || !editingQuestion || !editingQuestion.questionText.trim()) return;
+    if (!selectedQ || !editingQuestion) return;
+    const cleanPrompt = sanitizePlainText(editingQuestion.questionText, { maxLength: 300, allowNewlines: true });
+    if (!cleanPrompt) return;
 
     try {
       setSaving(true);
+      const sanitizedQuestion: WeeklyQuestion = {
+        ...editingQuestion,
+        questionText: cleanPrompt,
+        imageUrl: editingQuestion.imageUrl ? sanitizeSafeUrl(editingQuestion.imageUrl) || null : null,
+        explanation: sanitizePlainText(editingQuestion.explanation || '', { maxLength: 400, allowNewlines: true }),
+        options: (editingQuestion.options || []).map((opt, idx) => ({
+          id: opt.id || `opt_${idx + 1}`,
+          text: sanitizePlainText(opt.text, { maxLength: 200 }),
+        })),
+      };
+
       const existingList = [...(selectedQ.questions || [])];
-      const idx = existingList.findIndex((x) => x.id === editingQuestion.id);
+      const idx = existingList.findIndex((x) => x.id === sanitizedQuestion.id);
       if (idx >= 0) {
-        existingList[idx] = editingQuestion;
+        existingList[idx] = sanitizedQuestion;
       } else {
         existingList.push({
-          ...editingQuestion,
+          ...sanitizedQuestion,
           id: `wq_${Date.now()}`,
         });
       }
@@ -410,13 +442,13 @@ export const WeeklyAdminView: React.FC = () => {
   // Add single recipient invitation
   const handleAddRecipient = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedQ || !recipientEmail.trim()) return;
+    const cleanEmail = sanitizeEmail(recipientEmail);
+    if (!selectedQ || !isValidEmailAddress(cleanEmail)) return;
 
     try {
       setSaving(true);
-      const cleanEmail = recipientEmail.trim().toLowerCase();
-      const cleanName = recipientName.trim() || cleanEmail.split('@')[0];
-      const cleanDept = recipientDept.trim() || 'General';
+      const cleanName = sanitizePersonName(recipientName, 80) || cleanEmail.split('@')[0];
+      const cleanDept = sanitizePlainText(recipientDept, { maxLength: 80 }) || 'General';
       const token = `wk_${Math.random().toString(36).substring(2, 10)}${Date.now().toString(36)}`;
 
       const invRef = doc(collection(db, `weeklyQuestionnaires/${selectedQ.id}/invitations`));
@@ -449,7 +481,8 @@ export const WeeklyAdminView: React.FC = () => {
     const lines = bulkRecipientsText
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .slice(0, 500);
 
     if (lines.length === 0) return;
 
@@ -457,10 +490,10 @@ export const WeeklyAdminView: React.FC = () => {
       setSaving(true);
       for (const line of lines) {
         const parts = line.split(',').map((p) => p.trim());
-        const emailPart = parts[0]?.toLowerCase();
-        if (!emailPart || !emailPart.includes('@')) continue;
-        const namePart = parts[1] || emailPart.split('@')[0];
-        const deptPart = parts[2] || 'General';
+        const emailPart = sanitizeEmail(parts[0]);
+        if (!isValidEmailAddress(emailPart)) continue;
+        const namePart = sanitizePersonName(parts[1], 80) || emailPart.split('@')[0];
+        const deptPart = sanitizePlainText(parts[2], { maxLength: 80 }) || 'General';
         const token = `wk_${Math.random().toString(36).substring(2, 10)}${Date.now().toString(36)}`;
 
         const invRef = doc(collection(db, `weeklyQuestionnaires/${selectedQ.id}/invitations`));
@@ -500,8 +533,17 @@ export const WeeklyAdminView: React.FC = () => {
     try {
       setSaving(true);
       const updatedTemplate: WeeklyEmailTemplate = {
-        ...emailTemplateForm,
-        customHtmlOverride: templateMode === 'html' ? rawHtmlCode : null,
+        subject: sanitizePlainText(emailTemplateForm.subject, { maxLength: 200 }),
+        bannerSubtitle: sanitizePlainText(emailTemplateForm.bannerSubtitle, { maxLength: 140 }),
+        heading: sanitizePlainText(emailTemplateForm.heading, { maxLength: 160 }),
+        greeting: sanitizePlainText(emailTemplateForm.greeting, { maxLength: 120 }),
+        introParagraph: sanitizePlainText(emailTemplateForm.introParagraph, { maxLength: 800, allowNewlines: true }),
+        ctaButtonText: sanitizePlainText(emailTemplateForm.ctaButtonText, { maxLength: 80 }),
+        securityTipBox: sanitizePlainText(emailTemplateForm.securityTipBox, { maxLength: 400, allowNewlines: true }),
+        footerText: sanitizePlainText(emailTemplateForm.footerText, { maxLength: 240 }),
+        accentColor: emailTemplateForm.accentColor || '#F05A28',
+        backgroundImageUrl: sanitizeSafeUrl(emailTemplateForm.backgroundImageUrl) || DEFAULT_EMAIL_BACKGROUND_URL,
+        customHtmlOverride: templateMode === 'html' ? sanitizeEmailHtml(rawHtmlCode) : null,
       };
       await updateDoc(doc(db, 'weeklyQuestionnaires', selectedQ.id), {
         emailTemplate: updatedTemplate,
@@ -518,11 +560,11 @@ export const WeeklyAdminView: React.FC = () => {
     }
   };
 
-  // Computed current HTML email output
+  // Computed current HTML email output (sanitized against XSS)
   const currentPreviewVars = getPreviewVariables(selectedQ, selectedInviteForPreview);
   const currentEmailHtml =
     templateMode === 'html' && rawHtmlCode.trim().length > 0
-      ? interpolateTemplate(rawHtmlCode, currentPreviewVars)
+      ? interpolateTemplate(sanitizeEmailHtml(rawHtmlCode), currentPreviewVars, true)
       : generateWeeklyEmailHtml(
           { ...emailTemplateForm, customHtmlOverride: null },
           currentPreviewVars

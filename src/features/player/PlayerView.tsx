@@ -12,6 +12,7 @@ import {
 } from '../../lib/game/gameEngine';
 import { soundManager } from '../../lib/sound/soundManager';
 import { getAvatarById } from '../../lib/avatars/avatarsCatalog';
+import { VideoPlayer } from '../../components/VideoPlayer';
 import {
   Trophy,
   Flame,
@@ -170,6 +171,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
                     questionType: q.questionType,
                     questionText: q.questionText,
                     imageUrl: q.imageUrl || null,
+                    videoUrl: q.videoUrl || null,
+                    videoFileName: q.videoFileName || null,
                     explanation: q.explanation || null,
                     timeLimitSeconds: q.timeLimitSeconds || 20,
                     points: q.points || 1000,
@@ -605,6 +608,15 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
                 src={currentQuestion.imageUrl}
                 alt="Question visual"
                 className="max-h-48 sm:max-h-64 w-auto rounded-2xl object-contain border border-slate-700/80 bg-slate-950/60 p-1.5"
+              />
+            </div>
+          )}
+          {(currentQuestion?.videoUrl || (currentIdx === 0 && game?.quizVideoUrl)) && (
+            <div className="flex justify-center pt-1">
+              <VideoPlayer
+                videoUrl={currentQuestion?.videoUrl || game?.quizVideoUrl}
+                videoFileName={currentQuestion?.videoFileName || game?.quizVideoFileName}
+                maxHeightClass="max-h-48 sm:max-h-64"
               />
             </div>
           )}

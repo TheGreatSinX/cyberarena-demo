@@ -60,6 +60,14 @@ service cloud.firestore {
       return resource.data;
     }
 
+    function isSafeText(text, minLen, maxLen) {
+      return text is string &&
+             text.size() >= minLen &&
+             text.size() <= maxLen &&
+             !text.matches('(?i).*<\\s*/?\\s*(script|iframe|object|embed|svg|applet|meta|link).*') &&
+             !text.matches('(?i).*(javascript|vbscript)\\s*:.*');
+    }
+
     // Entity validation blueprints
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'email', 'role', 'disabled']) &&
@@ -72,7 +80,7 @@ service cloud.firestore {
 
     function isValidQuiz(data) {
       return data.keys().hasAll(['title', 'status', 'createdBy']) &&
-             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             isSafeText(data.title, 1, 120) &&
              (data.status == 'DRAFT' || data.status == 'PUBLISHED' || data.status == 'ARCHIVED') &&
              data.createdBy is string && data.createdBy.size() <= 128;
     }
@@ -80,7 +88,7 @@ service cloud.firestore {
     function isValidQuestion(data) {
       return data.keys().hasAll(['questionType', 'questionText', 'timeLimitSeconds', 'points', 'sortOrder']) &&
              (data.questionType == 'MULTIPLE_CHOICE' || data.questionType == 'MULTIPLE_CHOICE_2' || data.questionType == 'TRUE_FALSE') &&
-             data.questionText is string && data.questionText.size() >= 1 && data.questionText.size() <= 300 &&
+             isSafeText(data.questionText, 1, 300) &&
              data.timeLimitSeconds is number && data.timeLimitSeconds >= 5 && data.timeLimitSeconds <= 120 &&
              data.points is number && data.points >= 0 && data.points <= 2000 &&
              data.sortOrder is number;
@@ -89,7 +97,7 @@ service cloud.firestore {
     function isValidGame(data) {
       return data.keys().hasAll(['quizId', 'gamePin', 'status', 'createdBy']) &&
              data.quizId is string && data.quizId.size() <= 128 &&
-             data.gamePin is string && data.gamePin.size() == 6 &&
+             data.gamePin is string && data.gamePin.size() == 6 && data.gamePin.matches('^[0-9]{6}$') &&
              (data.status == 'WAITING' || data.status == 'COUNTDOWN' || data.status == 'QUESTION_ACTIVE' || data.status == 'QUESTION_LOCKED' || data.status == 'ANSWER_RESULTS' || data.status == 'LEADERBOARD' || data.status == 'FINISHED') &&
              data.createdBy is string && data.createdBy.size() <= 128;
     }
@@ -97,15 +105,15 @@ service cloud.firestore {
     function isValidPlayer(data) {
       return data.keys().hasAll(['nickname', 'sessionToken', 'score']) &&
              data.keys().hasOnly(['nickname', 'sessionToken', 'score', 'streak', 'correctCount', 'rank', 'isConnected', 'joinedAt', 'lastActiveAt', 'avatarId', 'avatarUrl']) &&
-             data.nickname is string && data.nickname.size() >= 1 && data.nickname.size() <= 48 &&
+             isSafeText(data.nickname, 1, 48) &&
              data.sessionToken is string && data.sessionToken.size() <= 128 &&
              data.score is number && data.score >= 0;
     }
 
     function isValidGameQuestion(data) {
       return data.keys().hasAll(['questionType', 'questionText', 'timeLimitSeconds', 'points', 'sortOrder']) &&
-             data.keys().hasOnly(['questionType', 'questionText', 'imageUrl', 'timeLimitSeconds', 'points', 'sortOrder', 'options']) &&
-             data.questionText is string && data.questionText.size() <= 300;
+             data.keys().hasOnly(['questionType', 'questionText', 'imageUrl', 'videoUrl', 'videoFileName', 'explanation', 'timeLimitSeconds', 'points', 'sortOrder', 'options']) &&
+             isSafeText(data.questionText, 1, 300);
     }
 
     function isValidAnswer(data) {
@@ -126,7 +134,7 @@ service cloud.firestore {
 
     function isValidWeeklyQuestionnaire(data) {
       return data.keys().hasAll(['title', 'status', 'createdBy']) &&
-             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             isSafeText(data.title, 1, 160) &&
              (data.status == 'ACTIVE' || data.status == 'CLOSED') &&
              data.createdBy is string && data.createdBy.size() <= 128;
     }
@@ -134,7 +142,7 @@ service cloud.firestore {
     function isValidWeeklyInvitation(data) {
       return data.keys().hasAll(['questionnaireId', 'recipientEmail', 'token', 'status']) &&
              data.questionnaireId is string && data.questionnaireId.size() <= 128 &&
-             data.recipientEmail is string && data.recipientEmail.size() >= 3 && data.recipientEmail.size() <= 160 &&
+             isSafeText(data.recipientEmail, 3, 160) &&
              data.token is string && data.token.size() <= 128 &&
              (data.status == 'PENDING' || data.status == 'COMPLETED');
     }
@@ -142,11 +150,27 @@ service cloud.firestore {
     function isValidWeeklySubmission(data) {
       return data.keys().hasAll(['questionnaireId', 'recipientEmail', 'recipientName', 'score', 'accuracy', 'submittedAt']) &&
              data.questionnaireId is string && data.questionnaireId.size() <= 128 &&
-             data.recipientEmail is string && data.recipientEmail.size() <= 160 &&
-             data.recipientName is string && data.recipientName.size() >= 1 && data.recipientName.size() <= 120 &&
+             isSafeText(data.recipientEmail, 0, 160) &&
+             isSafeText(data.recipientName, 1, 120) &&
              data.score is number && data.score >= 0 &&
              data.accuracy is number && data.accuracy >= 0 && data.accuracy <= 100 &&
              data.submittedAt is string && data.submittedAt.size() <= 64;
+    }
+
+    function isValidMediaAsset(data) {
+      return data.keys().hasAll(['fileName', 'mimeType', 'sizeBytes', 'chunkCount', 'createdAt']) &&
+             data.keys().hasOnly(['fileName', 'mimeType', 'sizeBytes', 'durationSeconds', 'chunkCount', 'createdAt']) &&
+             isSafeText(data.fileName, 1, 160) &&
+             data.mimeType == 'video/mp4' &&
+             data.sizeBytes is number && data.sizeBytes > 0 && data.sizeBytes <= 26214400 &&
+             data.chunkCount is number && data.chunkCount >= 1 && data.chunkCount <= 100;
+    }
+
+    function isValidMediaChunk(data) {
+      return data.keys().hasAll(['index', 'data']) &&
+             data.keys().hasOnly(['index', 'data']) &&
+             data.index is number && data.index >= 0 && data.index <= 100 &&
+             data.data is string && data.data.size() > 0 && data.data.size() <= 700000;
     }
 
     // Match rules
@@ -253,6 +277,19 @@ service cloud.firestore {
         allow create: if isValidId(submissionId) && isValidWeeklySubmission(incoming());
         allow update: if isValidId(submissionId) && (isAdmin() || isSignedIn());
         allow delete: if isValidId(submissionId) && (isAdmin() || isSignedIn());
+      }
+    }
+
+    // Chunked MP4 video media assets for quizzes and questions
+    match /mediaAssets/{mediaId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(mediaId) && isSignedIn() && isValidMediaAsset(incoming());
+      allow delete: if isValidId(mediaId) && isSignedIn();
+
+      match /chunks/{chunkId} {
+        allow get, list: if true;
+        allow create, update: if isValidId(chunkId) && isSignedIn() && isValidMediaChunk(incoming());
+        allow delete: if isValidId(chunkId) && isSignedIn();
       }
     }
 

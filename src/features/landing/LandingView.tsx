@@ -6,6 +6,13 @@ import { soundManager } from '../../lib/sound/soundManager';
 import { FloatingPartyObjects } from '../../components/FloatingPartyObjects';
 import { AvatarPickerModal } from './AvatarPickerModal';
 import { PlayerAvatar, DEFAULT_AVATAR } from '../../lib/avatars/avatarsCatalog';
+import {
+  sanitizeLiveInput,
+  sanitizeNumericCode,
+  sanitizePersonName,
+  sanitizeSafeIdentifier,
+  sanitizeSafeUrl,
+} from '../../lib/utils/sanitize';
 
 interface LandingViewProps {
   onJoinSuccess: (session: {
@@ -110,8 +117,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
     e.preventDefault();
     setError(null);
 
-    const cleanPin = pin.trim().replace(/\D/g, '');
-    const cleanNick = nickname.trim();
+    const cleanPin = sanitizeNumericCode(pin, 6);
+    const cleanNick = sanitizePersonName(nickname, 48);
 
     if (!cleanPin || cleanPin.length !== 6) {
       setError('Please enter a valid 6-digit Game PIN.');
@@ -135,10 +142,12 @@ export const LandingView: React.FC<LandingViewProps> = ({
     }
 
     const avatarToUse = selectedAvatar || DEFAULT_AVATAR;
+    const safeAvatarId = sanitizeSafeIdentifier(avatarToUse.id, 64) || DEFAULT_AVATAR.id;
+    const safeAvatarUrl = sanitizeSafeUrl(avatarToUse.imageUrl) || DEFAULT_AVATAR.imageUrl;
 
     try {
       setLoading(true);
-      const res = await joinGameSession(cleanPin, cleanNick, avatarToUse.id, avatarToUse.imageUrl);
+      const res = await joinGameSession(cleanPin, cleanNick, safeAvatarId, safeAvatarUrl);
       soundManager.playJoin();
       onJoinSuccess({
         playerId: res.playerId,
@@ -148,8 +157,8 @@ export const LandingView: React.FC<LandingViewProps> = ({
         nickname: res.nickname || cleanNick,
         gamePin: cleanPin,
         dueDate: res.dueDate || null,
-        avatarId: res.avatarId || avatarToUse.id,
-        avatarUrl: res.avatarUrl || avatarToUse.imageUrl,
+        avatarId: res.avatarId || safeAvatarId,
+        avatarUrl: res.avatarUrl || safeAvatarUrl,
         alreadyCompleted: Boolean(res.alreadyCompleted),
         preloadedQuestions: res.preloadedQuestions,
       });
@@ -223,7 +232,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 value={nickname}
                 onChange={(e) => {
                   setError(null);
-                  setNickname(e.target.value.slice(0, 48));
+                  setNickname(sanitizeLiveInput(e.target.value, 48, false));
                 }}
                 placeholder="e.g. Juan Dela Cruz"
                 className="w-full text-center text-base sm:text-lg font-bold px-4 py-2.5 sm:py-3 rounded-2xl bg-slate-950/80 border-2 border-slate-700 focus:border-[#00A191] focus:ring-4 focus:ring-[#00A191]/20 text-white placeholder-slate-600 transition-all outline-none"
