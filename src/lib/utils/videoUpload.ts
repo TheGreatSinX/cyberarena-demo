@@ -119,81 +119,172 @@ function base64ToMp4Blob(base64Data: string): Blob {
 }
 
 /**
- * Uploads an .mp4 video file into chunked Firestore documents (`mediaAssets/{mediaId}/chunks/{idx}`)
- * so it works reliably across all sessions and participants without exceeding Firestore's 1 MiB per-doc limit.
+ * Processes an .mp4 video file for instant local preview without writing binary chunks to Firestore.
+ * This completely prevents exhausting Google Cloud Firestore daily write quotas.
+ * Administrators are recommended to use Google Cloud Storage or Google Drive public URLs
+ * for permanent, zero-quota cross-device playback.
  */
 export async function processUploadedMp4Video(
   file: File,
   onProgress?: (percent: number) => void
 ): Promise<UploadedVideoResult> {
-  onProgress?.(5);
-  const { durationSeconds, safeFileName } = await validateMp4File(file);
-  onProgress?.(12);
-
-  const base64Data = await readFileAsBase64(file);
   onProgress?.(25);
+  const { durationSeconds, safeFileName } = await validateMp4File(file);
+  onProgress?.(70);
 
-  const totalChars = base64Data.length;
-  const chunks: string[] = [];
-  for (let offset = 0; offset < totalChars; offset += CHUNK_SIZE_CHARS) {
-    chunks.push(base64Data.slice(offset, offset + CHUNK_SIZE_CHARS));
-  }
-
-  const mediaRef = doc(collection(db, 'mediaAssets'));
-  const mediaId = mediaRef.id;
-  const nowIso = new Date().toISOString();
-
-  // Save metadata document first with sanitized filename
-  await setDoc(mediaRef, {
-    fileName: safeFileName,
-    mimeType: 'video/mp4',
-    sizeBytes: file.size,
-    durationSeconds,
-    chunkCount: chunks.length,
-    createdAt: nowIso,
-  });
-
-  // Upload chunks in batches of 4 to stay well within Firestore batch payload limits and report smooth progress
-  const BATCH_GROUP_SIZE = 4;
-  for (let i = 0; i < chunks.length; i += BATCH_GROUP_SIZE) {
-    const batch = writeBatch(db);
-    const slice = chunks.slice(i, i + BATCH_GROUP_SIZE);
-    slice.forEach((chunkStr, idx) => {
-      const chunkIndex = i + idx;
-      const chunkDocRef = doc(db, `mediaAssets/${mediaId}/chunks`, `chunk_${String(chunkIndex).padStart(4, '0')}`);
-      batch.set(chunkDocRef, {
-        index: chunkIndex,
-        data: chunkStr,
-      });
-    });
-    await batch.commit();
-
-    const completedChunks = Math.min(chunks.length, i + slice.length);
-    const pct = 25 + Math.round((completedChunks / chunks.length) * 75);
-    onProgress?.(pct);
-  }
-
-  const videoUrl = `${FIRESTORE_MEDIA_PREFIX}${mediaId}`;
-
-  // Cache local Blob URL immediately so preview playback is instantaneous
+  // Generate an in-memory Blob Object URL for immediate preview and testing
   const localBlobUrl = URL.createObjectURL(new Blob([file], { type: 'video/mp4' }));
-  resolvedVideoBlobCache.set(videoUrl, localBlobUrl);
+  resolvedVideoBlobCache.set(localBlobUrl, localBlobUrl);
 
   onProgress?.(100);
   return {
-    videoUrl,
+    videoUrl: localBlobUrl,
     videoFileName: safeFileName,
     sizeBytes: file.size,
     durationSeconds,
   };
 }
 
+export type VideoSourceType =
+  | 'google-drive'
+  | 'google-cloud-storage'
+  | 'youtube'
+  | 'vimeo'
+  | 'direct-url'
+  | 'firestore-media';
+
+export interface ParsedVideoSource {
+  sourceType: VideoSourceType;
+  rawUrl: string;
+  streamUrl: string;
+  embedUrl?: string | null;
+  displayBadge: string;
+  inferredFileName: string;
+}
+
 /**
- * Resolves a stored `videoUrl` (either `firestore-media://{mediaId}`, `data:video/mp4;base64,...`, or `https://...`)
- * into a playable HTML5 `<video>` URL.
+ * Parses any video URL to identify its origin (Google Cloud Storage, Google Drive,
+ * YouTube, Vimeo, generic HTTPS streaming URL, or Firestore chunked media), providing embed and stream endpoints.
+ */
+export function parseVideoSource(rawUrl?: string | null): ParsedVideoSource | null {
+  if (!rawUrl) return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+
+  // YouTube video link (watch, youtu.be, embed, shorts)
+  if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be')) {
+    const ytMatch =
+      trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|watch\?.+&v=))([\w-]{11})/i);
+    const videoId = ytMatch ? ytMatch[1] : '';
+    if (videoId) {
+      return {
+        sourceType: 'youtube',
+        rawUrl: trimmed,
+        streamUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        embedUrl: `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`,
+        displayBadge: 'YouTube Video',
+        inferredFileName: `YouTube (${videoId}).mp4`,
+      };
+    }
+  }
+
+  // Vimeo video link
+  if (trimmed.includes('vimeo.com')) {
+    const vimeoMatch = trimmed.match(/(?:vimeo\.com\/|player\.vimeo\.com\/video\/)([0-9]+)/i);
+    const videoId = vimeoMatch ? vimeoMatch[1] : '';
+    if (videoId) {
+      return {
+        sourceType: 'vimeo',
+        rawUrl: trimmed,
+        streamUrl: `https://vimeo.com/${videoId}`,
+        embedUrl: `https://player.vimeo.com/video/${videoId}?title=0&byline=0`,
+        displayBadge: 'Vimeo Video',
+        inferredFileName: `Vimeo (${videoId}).mp4`,
+      };
+    }
+  }
+
+  // Google Drive share link (e.g. https://drive.google.com/file/d/FILE_ID/view?usp=sharing)
+  if (trimmed.includes('drive.google.com')) {
+    const fileIdMatch =
+      trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/i) ||
+      trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/i) ||
+      trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/i);
+
+    const fileId = fileIdMatch ? fileIdMatch[1] : '';
+    if (fileId) {
+      return {
+        sourceType: 'google-drive',
+        rawUrl: trimmed,
+        streamUrl: `https://drive.google.com/uc?export=download&id=${fileId}`,
+        embedUrl: `https://drive.google.com/file/d/${fileId}/preview`,
+        displayBadge: 'Google Drive',
+        inferredFileName: `Drive Video (${fileId.slice(0, 8)}...).mp4`,
+      };
+    }
+  }
+
+  // Google Cloud Storage URL (e.g. https://storage.googleapis.com/<bucket>/<file.mp4>)
+  if (
+    trimmed.includes('storage.googleapis.com') ||
+    trimmed.includes('storage.cloud.google.com')
+  ) {
+    const cleanUrl = trimmed.split('?')[0];
+    const fileName = cleanUrl.split('/').pop() || 'Cloud-Video.mp4';
+    return {
+      sourceType: 'google-cloud-storage',
+      rawUrl: trimmed,
+      streamUrl: trimmed,
+      embedUrl: null,
+      displayBadge: 'Google Cloud Storage',
+      inferredFileName: decodeURIComponent(fileName),
+    };
+  }
+
+  // Legacy Firestore Chunked Media
+  if (trimmed.startsWith(FIRESTORE_MEDIA_PREFIX)) {
+    return {
+      sourceType: 'firestore-media',
+      rawUrl: trimmed,
+      streamUrl: trimmed,
+      embedUrl: null,
+      displayBadge: 'Database Media Asset',
+      inferredFileName: 'Uploaded Asset.mp4',
+    };
+  }
+
+  // Generic Direct HTTPS / HTTP video (S3, Cloudflare R2, CDN, raw MP4 link)
+  if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
+    const cleanUrl = trimmed.split('?')[0];
+    const fileName = cleanUrl.split('/').pop() || 'Video-Stream.mp4';
+    return {
+      sourceType: 'direct-url',
+      rawUrl: trimmed,
+      streamUrl: trimmed,
+      embedUrl: null,
+      displayBadge: 'External Cloud Video',
+      inferredFileName: decodeURIComponent(fileName),
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Resolves a stored `videoUrl` (either Google Cloud Storage, Google Drive,
+ * YouTube, Vimeo, `firestore-media://{mediaId}`, `data:video/mp4;base64,...`, or `https://...`)
+ * into a playable URL.
  */
 export async function resolvePlayableVideoUrl(videoUrl?: string | null): Promise<string | null> {
   if (!videoUrl) return null;
+
+  const parsed = parseVideoSource(videoUrl);
+  if (parsed?.embedUrl) {
+    return parsed.embedUrl;
+  }
+  if (parsed?.sourceType === 'google-cloud-storage' || parsed?.sourceType === 'direct-url') {
+    return parsed.streamUrl;
+  }
 
   const cached = resolvedVideoBlobCache.get(videoUrl);
   if (cached) return cached;

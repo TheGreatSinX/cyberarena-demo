@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Sparkles, Users, Trophy, ShieldCheck, CheckCircle2, Loader2, AlertCircle, Lock, Mail } from 'lucide-react';
+import { Play, Sparkles, Users, Trophy, ShieldCheck, CheckCircle2, Loader2, AlertCircle, Lock, Mail, BookOpen, Clock, Zap, Award, X } from 'lucide-react';
 import { joinGameSession, prefetchPinSession } from '../../lib/game/gameEngine';
 import { GameQuestionSnapshot } from '../../types';
 import { soundManager } from '../../lib/sound/soundManager';
@@ -48,6 +48,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
   const [selectedAvatar, setSelectedAvatar] = useState<PlayerAvatar | null>(null);
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
+  const [mechanicsModalOpen, setMechanicsModalOpen] = useState(false);
   const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -351,24 +352,37 @@ export const LandingView: React.FC<LandingViewProps> = ({
           </form>
         </div>
 
-        {/* DATA PRIVACY NOTICE Button beneath Join Card */}
-        <button
-          type="button"
-          onClick={() => {
-            soundManager.playAnswerSubmit();
-            setPrivacyModalOpen(true);
-          }}
-          className="w-full mt-3.5 sm:mt-4 min-h-[44px] flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-[#0D1F3C]/90 hover:bg-[#0D1F3C] border border-[#00A191]/40 hover:border-[#00A191] text-[#E5E5E5] hover:text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg shadow-[#0D1F3C]/50 hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer"
-        >
-          <ShieldCheck className="w-4 h-4 text-[#00A191] shrink-0" />
-          <span>DATA PRIVACY NOTICE</span>
-          {privacyAcknowledged && (
-            <span className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#00A191]/20 border border-[#00A191]/50 text-[#00A191] text-[10px] font-extrabold">
-              <CheckCircle2 className="w-3 h-3" />
-              ACKNOWLEDGED
-            </span>
-          )}
-        </button>
+        {/* DATA PRIVACY NOTICE & GAME MECHANICS Buttons beneath Join Card */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 mt-3.5 sm:mt-4">
+          <button
+            type="button"
+            onClick={() => {
+              soundManager.playAnswerSubmit();
+              setMechanicsModalOpen(true);
+            }}
+            className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-[#0D1F3C]/90 hover:bg-[#0D1F3C] border border-[#F05A28]/50 hover:border-[#F05A28] text-[#E5E5E5] hover:text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg shadow-[#0D1F3C]/50 hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <BookOpen className="w-4 h-4 text-[#F05A28] shrink-0" />
+            <span>GAME MECHANICS</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              soundManager.playAnswerSubmit();
+              setPrivacyModalOpen(true);
+            }}
+            className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl bg-[#0D1F3C]/90 hover:bg-[#0D1F3C] border border-[#00A191]/40 hover:border-[#00A191] text-[#E5E5E5] hover:text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg shadow-[#0D1F3C]/50 hover:scale-[1.01] active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <ShieldCheck className="w-4 h-4 text-[#00A191] shrink-0" />
+            <span>DATA PRIVACY</span>
+            {privacyAcknowledged && (
+              <span className="ml-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[#00A191]/20 border border-[#00A191]/50 text-[#00A191] text-[10px] font-extrabold">
+                <CheckCircle2 className="w-3 h-3" />
+              </span>
+            )}
+          </button>
+        </div>
 
         {/* Feature Highlights */}
         <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-5 sm:mt-8">
@@ -465,6 +479,133 @@ export const LandingView: React.FC<LandingViewProps> = ({
               >
                 <CheckCircle2 className="w-5 h-5 shrink-0" />
                 <span>Acknowledge &amp; Return</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Game Mechanics Modal */}
+      {mechanicsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col rounded-t-3xl sm:rounded-3xl bg-[#0D1F3C] border-t-2 sm:border-2 border-[#F05A28]/50 shadow-2xl shadow-black/80 text-white overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-5 py-4 sm:p-6 border-b border-slate-800/90 flex items-center justify-between gap-3 bg-[#0D1F3C]/95 shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-[#F05A28]/25 to-[#00A191]/25 border border-[#F05A28]/50 flex items-center justify-center shrink-0">
+                  <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-[#F05A28]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-1.5 text-[#00A191] text-[10px] sm:text-xs font-bold uppercase tracking-wider">
+                    <Trophy className="w-3.5 h-3.5 shrink-0 text-[#F05A28]" />
+                    <span className="truncate">Official Participant Guide</span>
+                  </div>
+                  <h2 className="text-lg sm:text-2xl font-black tracking-tight text-white">
+                    GAME <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#F05A28] via-[#E5E5E5] to-[#00A191]">MECHANICS</span>
+                  </h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMechanicsModalOpen(false)}
+                className="p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                aria-label="Close Game Mechanics"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Content */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5 text-xs sm:text-sm text-slate-200 leading-relaxed bg-slate-950/60">
+              {/* Step 1: How to Join */}
+              <div className="p-4 rounded-2xl bg-[#0D1F3C]/90 border border-slate-800 space-y-2">
+                <div className="flex items-center gap-2 text-[#00A191] font-black text-sm sm:text-base">
+                  <Play className="w-4 h-4 fill-current shrink-0" />
+                  <span>1. How to Join the Game</span>
+                </div>
+                <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
+                  <li>Enter the <strong className="text-white">6-Digit Game PIN</strong> provided by the host/administrator.</li>
+                  <li>Type your <strong className="text-white">Full Name</strong> (2–48 characters) for official score and winner verification.</li>
+                  <li>Choose your <strong className="text-white">Player Avatar</strong> from the 12 character personas.</li>
+                  <li>Read the <strong className="text-white">Data Privacy Notice</strong> modal that automatically appears and click <strong className="text-[#00A191]">“Acknowledge &amp; Return”</strong> to activate the <strong className="text-[#F05A28]">JOIN GAME</strong> button.</li>
+                </ol>
+              </div>
+
+              {/* Step 2: Gameplay & Question Format */}
+              <div className="p-4 rounded-2xl bg-[#0D1F3C]/90 border border-slate-800 space-y-2">
+                <div className="flex items-center gap-2 text-[#F05A28] font-black text-sm sm:text-base">
+                  <Clock className="w-4 h-4 shrink-0" />
+                  <span>2. Gameplay &amp; Answering Questions</span>
+                </div>
+                <ul className="list-disc list-inside space-y-1.5 text-slate-300">
+                  <li><strong className="text-white">Self-Paced Continuous Flow:</strong> Progress through each question at your own pace before the quiz due date.</li>
+                  <li><strong className="text-white">Question Formats:</strong> Questions may include Multiple Choice (4 options: ▲ Triangle, ◆ Diamond, ● Circle, ■ Square) or True / False, accompanied by images or MP4 video clips.</li>
+                  <li><strong className="text-white">Countdown Timer:</strong> Each question has a strict countdown timer (default <strong className="text-white">20 seconds</strong>). If the timer reaches <code className="text-[#F05A28] font-mono">0s</code> before you select an answer, the question is marked <strong className="text-[#F05A28]">TIME EXPIRED (0 pts)</strong>.</li>
+                  <li><strong className="text-white">Keyboard Shortcuts:</strong> On desktop, you can press keys <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-mono text-[11px]">1</kbd>–<kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-mono text-[11px]">4</kbd> to select an option and <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-mono text-[11px]">Enter</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-white font-mono text-[11px]">→</kbd> to advance to the next question.</li>
+                </ul>
+              </div>
+
+              {/* Step 3: Speed-Based Scoring Formula */}
+              <div className="p-4 rounded-2xl bg-[#0D1F3C]/90 border border-slate-800 space-y-2">
+                <div className="flex items-center gap-2 text-amber-400 font-black text-sm sm:text-base">
+                  <Zap className="w-4 h-4 shrink-0" />
+                  <span>3. Speed &amp; Accuracy Scoring System</span>
+                </div>
+                <p className="text-slate-300">
+                  Both <strong className="text-white">accuracy</strong> and <strong className="text-white">response speed</strong> determine your points on every question:
+                </p>
+                <div className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 font-mono text-xs text-[#00A191]">
+                  Points = Round( BasePoints × [ 1 − (ResponseTime ÷ 20s) × 0.5 ] )
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-slate-300">
+                  <li><strong className="text-emerald-400">Correct Answer:</strong> Earns between <strong className="text-white">100% of Base Points</strong> (e.g., 1,000 pts for an instant answer) down to <strong className="text-white">50% of Base Points</strong> (e.g., 500 pts at the 20-second limit).</li>
+                  <li><strong className="text-[#F05A28]">Incorrect or Expired Answer:</strong> Awards <strong className="text-white">0 points</strong> and resets your consecutive answer streak to 0.</li>
+                  <li><strong className="text-amber-300">Answer Streak:</strong> Consecutive correct answers build your <strong className="text-white">Streak Counter 🔥</strong>, which serves as a live leaderboard tie-breaker.</li>
+                </ul>
+              </div>
+
+              {/* Step 4: Leaderboard Ranking & Tie-Breakers */}
+              <div className="p-4 rounded-2xl bg-[#0D1F3C]/90 border border-slate-800 space-y-2">
+                <div className="flex items-center gap-2 text-[#00A191] font-black text-sm sm:text-base">
+                  <Award className="w-4 h-4 shrink-0" />
+                  <span>4. Official Leaderboard Ranking &amp; Tie-Breakers</span>
+                </div>
+                <p className="text-slate-300">
+                  Participants are ranked automatically from <strong className="text-white">Rank #1</strong> downward using these strict multi-level criteria:
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                  <li><strong className="text-white">Highest Total Score</strong> (descending)</li>
+                  <li><strong className="text-white">Most Correct Answers</strong> (descending)</li>
+                  <li><strong className="text-white">Fastest Average Response Time</strong> in seconds (ascending)</li>
+                  <li><strong className="text-white">Earliest Completion / Join Timestamp</strong> (first to achieve the score ranks higher)</li>
+                </ol>
+              </div>
+
+              {/* Step 5: Fair Play & One-Attempt Policy */}
+              <div className="p-4 rounded-2xl bg-[#F05A28]/10 border border-[#F05A28]/40 space-y-1.5">
+                <div className="flex items-center gap-2 text-[#F05A28] font-black text-sm sm:text-base">
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span>5. Fair Play &amp; Strictly One (1) Attempt Policy</span>
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-slate-200">
+                  <li><strong className="text-white">No Retakes:</strong> Each participant is allowed <strong className="text-white">only one (1) attempt per Game PIN</strong>. Duplicate submissions under the same name or device session are locked after completion.</li>
+                  <li><strong className="text-white">Disconnect Protection:</strong> If your connection drops mid-quiz, re-enter the same PIN and Full Name to resume automatically at your first unanswered question.</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 sm:p-6 border-t border-slate-800/90 bg-[#0D1F3C]/95 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  soundManager.playAnswerSubmit();
+                  setMechanicsModalOpen(false);
+                }}
+                className="w-full min-h-[48px] flex items-center justify-center gap-2 py-3 px-6 rounded-2xl font-black text-sm sm:text-base bg-gradient-to-r from-[#F05A28] via-[#e45120] to-[#00A191] hover:brightness-110 text-white shadow-xl shadow-[#F05A28]/30 cursor-pointer transition-all"
+              >
+                <CheckCircle2 className="w-5 h-5 shrink-0" />
+                <span>Got It — Back to Game</span>
               </button>
             </div>
           </div>

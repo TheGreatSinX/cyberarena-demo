@@ -318,15 +318,10 @@ export async function syncQuizPinSession(
     const qQuery = query(collection(db, `quizzes/${quizId}/questions`), orderBy('sortOrder', 'asc'));
     const rawQSnap = await getDocs(qQuery);
 
-    const validQuestionDocs = [];
-    for (const d of rawQSnap.docs) {
+    const validQuestionDocs = rawQSnap.docs.filter((d) => {
       const qData = d.data() as Question;
-      if (isLegacyMockQuestion(qData.questionText)) {
-        await deleteDoc(d.ref);
-      } else {
-        validQuestionDocs.push(d);
-      }
-    }
+      return !isLegacyMockQuestion(qData.questionText);
+    });
 
     const finalPin = (customPin || quizData.gamePin || generateCryptoPin()).trim();
     const finalDueDate = dueDate !== undefined ? dueDate : (quizData.dueDate || null);

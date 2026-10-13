@@ -113,7 +113,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const fetchMetrics = async () => {
     try {
-      await purgeLegacyMockDataFromDatabase();
       const qSnap = await getDocs(collection(db, 'quizzes'));
       const totalQ = qSnap.size;
       const pubQ = qSnap.docs.filter((d) => d.data().status === 'PUBLISHED').length;

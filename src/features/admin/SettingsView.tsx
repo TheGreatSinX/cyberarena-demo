@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../../lib/auth/authContext';
 import { AuditLogsView } from './AuditLogsView';
 import {
   Settings,
@@ -8,6 +9,9 @@ import {
   Trash2,
   ShieldAlert,
   ShieldCheck,
+  ShieldOff,
+  PauseCircle,
+  PlayCircle,
   LayoutDashboard,
   Layers,
   BarChart3,
@@ -44,8 +48,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateNavVisibility,
   onOpenResetModal,
 }) => {
+  const { auditLoggingEnabled, setAuditLoggingEnabled } = useAuth();
   const [activeSubSection, setActiveSubSection] = useState<'general' | 'audit'>('general');
   const [savedNotice, setSavedNotice] = useState(false);
+  const [auditToggleNotice, setAuditToggleNotice] = useState<string | null>(null);
+
+  const handleToggleAuditLogging = () => {
+    const next = !auditLoggingEnabled;
+    setAuditLoggingEnabled(next);
+    setAuditToggleNotice(
+      next
+        ? 'Security & Audit Logging activated (operations will be recorded).'
+        : 'Security & Audit Logging stopped (database writes paused to save free quota).'
+    );
+    setTimeout(() => setAuditToggleNotice(null), 3500);
+  };
 
   const handleToggleLink = (key: keyof NavVisibilityConfig) => {
     const next = {
@@ -245,6 +262,125 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 );
               })}
             </div>
+          </div>
+
+          {/* Security & Audit Logs Toggle Control Card */}
+          <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5 min-w-0">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 ${
+                      auditLoggingEnabled
+                        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                        : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+                    }`}
+                  >
+                    {auditLoggingEnabled ? (
+                      <ShieldCheck className="w-5 h-5" />
+                    ) : (
+                      <ShieldOff className="w-5 h-5" />
+                    )}
+                  </div>
+
+                  <h2 className="text-lg font-black text-white">Security & Audit Logs Recording</h2>
+
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border transition-colors ${
+                      auditLoggingEnabled
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                    }`}
+                  >
+                    {auditLoggingEnabled ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Active • Recording to Database</span>
+                      </>
+                    ) : (
+                      <>
+                        <PauseCircle className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Stopped • Quota Protection Mode</span>
+                      </>
+                    )}
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+                  Toggle to stop or start recording administrator operations (logins, quiz modifications, deletions, role updates) to the Firestore <code className="text-slate-300 bg-slate-950 px-1 py-0.5 rounded border border-slate-800">auditLogs</code> collection. Stopping audit logs prevents database write operations and preserves daily Google Cloud free quotas.
+                </p>
+              </div>
+
+              {/* Master Toggle Control */}
+              <div className="flex items-center gap-3.5 self-start sm:self-auto shrink-0 bg-slate-950/80 p-2.5 rounded-2xl border border-slate-800">
+                <div className="text-right">
+                  <span className="text-xs font-bold block text-white">
+                    {auditLoggingEnabled ? 'Audit Logs Active' : 'Audit Logs Stopped'}
+                  </span>
+                  <span className="text-[11px] text-slate-400 block">
+                    {auditLoggingEnabled ? 'Writing to Firestore' : 'Zero Writes Consumed'}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={auditLoggingEnabled}
+                  aria-label="Toggle Security & Audit Logs"
+                  onClick={handleToggleAuditLogging}
+                  className={`relative inline-flex h-8 w-15 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    auditLoggingEnabled ? 'bg-emerald-600' : 'bg-slate-700'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out flex items-center justify-center ${
+                      auditLoggingEnabled ? 'translate-x-7' : 'translate-x-0'
+                    }`}
+                  >
+                    {auditLoggingEnabled ? (
+                      <PlayCircle className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <PauseCircle className="w-4 h-4 text-slate-500" />
+                    )}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Notification Toast Banner upon toggle */}
+            {auditToggleNotice && (
+              <div className="p-3.5 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-200 text-xs flex items-center gap-2 animate-in fade-in duration-200 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />
+                <span>{auditToggleNotice}</span>
+              </div>
+            )}
+
+            {/* Informative Guidance Banner based on current state */}
+            {!auditLoggingEnabled ? (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-3 text-xs text-amber-200">
+                <PauseCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-amber-300">
+                    Audit logging is currently stopped.
+                  </p>
+                  <p className="text-slate-300 leading-relaxed">
+                    Zero Firestore write units are being spent on background audit entries. Your quizzes, questions, and participant game sessions remain 100% operational with full quota capacity. You can resume audit logging at any time by flipping the switch above.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-start gap-3 text-xs text-emerald-200">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-emerald-300">
+                    Audit logging is currently recording.
+                  </p>
+                  <p className="text-slate-300 leading-relaxed">
+                    Administrator actions are being written to Firestore. If you see Google Cloud daily free write quota warnings, you can stop audit logs anytime here to immediately pause write operations.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* System Danger Zone: Reset Database */}
