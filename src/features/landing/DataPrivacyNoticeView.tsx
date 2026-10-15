@@ -29,7 +29,7 @@ export const DataPrivacyNoticeView: React.FC<DataPrivacyNoticeViewProps> = ({
         <div className="text-center mb-4 sm:mb-6">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#0D1F3C]/90 border border-[#00A191]/40 text-[#00A191] text-xs font-bold uppercase tracking-wider mb-3 shadow-lg">
             <ShieldCheck className="w-4 h-4 text-[#00A191]" />
-            <span>InfoPro Business Solutions, Inc. (IBSI)</span>
+            <span>Infopro Business solutions (IBSI)</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-white">
             DATA PRIVACY <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#F05A28] via-[#E5E5E5] to-[#00A191]">NOTICE</span>
@@ -56,27 +56,19 @@ export const DataPrivacyNoticeView: React.FC<DataPrivacyNoticeViewProps> = ({
           {/* Notice Body Text */}
           <div className="space-y-4 text-sm sm:text-base text-slate-200 leading-relaxed font-normal bg-slate-950/60 border border-slate-800/90 rounded-2xl p-4 sm:p-6">
             <p>
-              We, at <strong className="text-white font-bold">InfoPro Business Solutions, Inc. (IBSI)</strong>, understand the importance of your privacy and are committed to protecting the confidentiality of your Personal Information and Sensitive Personal Information (collectively, “Personal Data”) in accordance with the <strong className="text-[#00A191] font-semibold">Data Privacy Act of 2012</strong>.
+              We at <strong className="text-white font-bold">Infopro Business solutions (IBSI)</strong> understand the importance of your privacy and are committed to protecting your personal information in accordance with the <strong className="text-[#00A191] font-semibold">Data Privacy Act of 2012</strong>.
             </p>
 
             <p>
-              Please be informed that the Personal Data you provide through this game will be collected and processed for purposes related to the <strong className="text-white font-semibold">“Spot the Phish: Legit or Not Legit?”</strong> cybersecurity awareness activity, including game participation, score tracking, winner verification, and communicating game-related announcements and updates.
+              Please be informed that any personal information you provide through this game will be collected and processed solely for purposes related to cybersecurity awareness activity, including game participation, score tracking, winner verification, and the dissemination of game-related announcements and updates.
             </p>
 
             <p>
-              Your Personal Data will be securely stored and handled in accordance with the policies, systems, and procedures of the Company.
+              Your personal information will be securely stored and protected in accordance with <strong className="text-white font-semibold">EDC&apos;s</strong> policies, systems, and procedures.
             </p>
 
             <p>
-              By clicking <strong className="text-white font-semibold">“Acknowledge &amp; Return,”</strong> you acknowledge and consent to the processing of your Personal Data for the purposes stated above. Should you have any inquiries, concerns, feedback, and/or complaints, you may contact our Data Protection Officer at{' '}
-              <a
-                href="mailto:dpo@ibs-ph.com"
-                className="inline-flex items-center gap-1 font-bold text-[#00A191] hover:text-[#F05A28] underline underline-offset-4 transition-colors"
-              >
-                <Mail className="w-3.5 h-3.5 inline" />
-                dpo@ibs-ph.com
-              </a>
-              .
+              By submitting this form, you consent to the collection and processing of your personal information for the purposes stated in this Privacy Notice.
             </p>
           </div>
 

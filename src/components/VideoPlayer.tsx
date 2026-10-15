@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Film, AlertCircle, Cloud, HardDrive, Video, Play, ExternalLink } from 'lucide-react';
+import { Loader2, Film, AlertCircle, Cloud, HardDrive, ExternalLink } from 'lucide-react';
 import { resolvePlayableVideoUrl, parseVideoSource, ParsedVideoSource } from '../lib/utils/videoUpload';
 
 interface VideoPlayerProps {
@@ -41,8 +41,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const parsed = parseVideoSource(videoUrl);
     setParsedSource(parsed);
 
-    // If it has a dedicated embedUrl (Google Drive, YouTube, Vimeo), use it directly
-    if (parsed?.embedUrl) {
+    // If it's a Google Drive share link, we embed the official Google Drive preview player directly
+    if (parsed?.sourceType === 'google-drive' && parsed.embedUrl) {
       setPlayableSrc(parsed.embedUrl);
       setLoading(false);
       setError(null);
@@ -72,14 +72,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   if (!videoUrl) return null;
 
-  const isIframeEmbed = Boolean(
-    parsedSource?.embedUrl ||
-      (playableSrc &&
-        (playableSrc.includes('drive.google.com') ||
-          playableSrc.includes('youtube.com') ||
-          playableSrc.includes('youtu.be') ||
-          playableSrc.includes('player.vimeo.com')))
-  );
+  const isGoogleDriveEmbed = parsedSource?.sourceType === 'google-drive' && playableSrc?.includes('drive.google.com');
 
   return (
     <div className={`w-full flex flex-col items-center ${className}`}>
@@ -94,13 +87,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <span>{error}</span>
         </div>
       ) : playableSrc ? (
-        <div className="w-full flex flex-col items-center gap-2">
+        <div className="w-full flex flex-col items-center gap-1.5">
           <div className="relative w-full flex justify-center rounded-2xl overflow-hidden bg-slate-950/90 border border-slate-700/80 p-1.5 shadow-lg">
-            {isIframeEmbed ? (
-              <div className="w-full aspect-video min-h-[190px] max-h-80 rounded-xl overflow-hidden bg-black flex items-center justify-center">
+            {isGoogleDriveEmbed ? (
+              <div className="w-full aspect-video min-h-[180px] max-h-72 rounded-xl overflow-hidden bg-black flex items-center justify-center">
                 <iframe
                   src={playableSrc}
-                  title={videoFileName || parsedSource?.displayBadge || 'Embedded Video Player'}
+                  title={videoFileName || 'Google Drive Video'}
                   className="w-full h-full border-0 rounded-xl"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
                   allowFullScreen
@@ -126,29 +119,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {/* Badges for Cloud Provider and Filename */}
           <div className="flex flex-wrap items-center justify-center gap-2 mt-0.5">
             {parsedSource && (
-              <span
-                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                  parsedSource.sourceType === 'google-cloud-storage'
-                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                    : parsedSource.sourceType === 'google-drive'
-                    ? 'bg-sky-500/15 border-sky-500/40 text-sky-300'
-                    : parsedSource.sourceType === 'youtube'
-                    ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
-                    : parsedSource.sourceType === 'vimeo'
-                    ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
-                    : parsedSource.sourceType === 'direct-url'
-                    ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300'
-                    : 'bg-slate-800 border-slate-700 text-slate-300'
-                }`}
-              >
+              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                parsedSource.sourceType === 'google-cloud-storage'
+                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                  : parsedSource.sourceType === 'google-drive'
+                  ? 'bg-sky-500/15 border-sky-500/40 text-sky-300'
+                  : parsedSource.sourceType === 'direct-url'
+                  ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300'
+                  : 'bg-slate-800 border-slate-700 text-slate-300'
+              }`}>
                 {parsedSource.sourceType === 'google-cloud-storage' ? (
                   <Cloud className="w-3 h-3 text-emerald-400" />
                 ) : parsedSource.sourceType === 'google-drive' ? (
                   <HardDrive className="w-3 h-3 text-sky-400" />
-                ) : parsedSource.sourceType === 'youtube' ? (
-                  <Play className="w-3 h-3 text-rose-400 fill-rose-400/30" />
-                ) : parsedSource.sourceType === 'vimeo' ? (
-                  <Video className="w-3 h-3 text-cyan-400" />
                 ) : (
                   <Film className="w-3 h-3 text-indigo-400" />
                 )}

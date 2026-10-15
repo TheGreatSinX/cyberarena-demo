@@ -14,7 +14,6 @@ import {
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import * as OTPAuth from 'otpauth';
 import { app, auth, db } from '../firebase/config';
-import { withTimeout } from '../firebase/asyncTimeout';
 import { UserProfile, Role } from '../../types';
 
 interface AuthContextType {
@@ -34,8 +33,6 @@ interface AuthContextType {
   verifyMfaToken: (token: string) => Promise<boolean>;
   resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
-  auditLoggingEnabled: boolean;
-  setAuditLoggingEnabled: (enabled: boolean) => void;
   writeAuditEntry: (action: string, resourceType: string, resourceId?: string, metadata?: Record<string, any>) => Promise<void>;
 }
 
@@ -51,20 +48,6 @@ const AUTHORIZED_DOMAIN_HASH = 'a0baa7a25a96de25455f2d5a6b76a28b7e92122289b5dd5f
 
 export const ADMIN_IDLE_TIMEOUT_MS = 10 * 60 * 1000; // Exact 10 minutes (600,000 ms) idle timeout
 const ADMIN_SESSION_STORAGE_KEY = 'cyberarena_admin_mfa_session_v1';
-export const AUDIT_LOGGING_STORAGE_KEY = 'cyberarena_audit_logging_enabled_v1';
-
-export function readStoredAuditLoggingSetting(): boolean {
-  try {
-    const val = localStorage.getItem(AUDIT_LOGGING_STORAGE_KEY);
-    if (val !== null) {
-      return val === 'true';
-    }
-  } catch (e) {
-    console.warn('Failed to read audit logging setting:', e);
-  }
-  // Default to false (stopped) to actively protect free daily Firestore write quota
-  return false;
-}
 
 interface StoredAdminSession {
   uid: string;
@@ -147,20 +130,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isMfaVerified, setIsMfaVerified] = useState(false);
   const [currentMfaSecret, setCurrentMfaSecret] = useState<string | null>(null);
   const [idleLogoutNotice, setIdleLogoutNotice] = useState<string | null>(null);
-  const [auditLoggingEnabled, setAuditLoggingEnabledState] = useState<boolean>(() =>
-    readStoredAuditLoggingSetting()
-  );
-  const auditLoggingEnabledRef = useRef<boolean>(auditLoggingEnabled);
-
-  const setAuditLoggingEnabled = (enabled: boolean) => {
-    setAuditLoggingEnabledState(enabled);
-    auditLoggingEnabledRef.current = enabled;
-    try {
-      localStorage.setItem(AUDIT_LOGGING_STORAGE_KEY, String(enabled));
-    } catch (e) {
-      console.warn('Failed to persist audit logging setting:', e);
-    }
-  };
 
   const lastActiveRef = useRef<number>(Date.now());
   const isMfaVerifiedRef = useRef<boolean>(false);
@@ -179,26 +148,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     resourceId?: string,
     metadata?: Record<string, any>
   ) => {
-    // If audit logging is stopped/paused by the administrator, do NOT perform any Firestore writes!
-    // This preserves Google Cloud Firestore free daily write quotas.
-    if (!auditLoggingEnabledRef.current || !auth.currentUser) return;
+    if (!auth.currentUser) return;
     try {
       const logRef = doc(db, 'auditLogs', `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
-      await withTimeout(
-        setDoc(logRef, {
-          actorUid: auth.currentUser.uid,
-          actorEmail: auth.currentUser.email || 'unknown',
-          action,
-          resourceType,
-          resourceId: resourceId || null,
-          metadata: metadata ? JSON.stringify(metadata) : null,
-          createdAt: new Date().toISOString(),
-        }),
-        3500,
-        'Audit log write'
-      );
-    } catch (err: any) {
-      console.warn('Audit log write skipped or failed:', err?.message || err);
+      await setDoc(logRef, {
+        actorUid: auth.currentUser.uid,
+        actorEmail: auth.currentUser.email || 'unknown',
+        action,
+        resourceType,
+        resourceId: resourceId || null,
+        metadata: metadata ? JSON.stringify(metadata) : null,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Failed to write audit log:', err);
     }
   };
 
@@ -737,8 +700,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         verifyMfaToken,
         resetPassword,
         logout,
-        auditLoggingEnabled,
-        setAuditLoggingEnabled,
         writeAuditEntry,
       }}
     >

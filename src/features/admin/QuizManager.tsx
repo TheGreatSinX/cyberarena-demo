@@ -21,7 +21,7 @@ import {
   isLegacyMockQuestion,
 } from '../../lib/game/gameEngine';
 import { processUploadedQuestionImage } from '../../lib/utils/imageUpload';
-import { parseVideoSource } from '../../lib/utils/videoUpload';
+import { processUploadedMp4Video, parseVideoSource } from '../../lib/utils/videoUpload';
 import {
   sanitizeFileName,
   sanitizeIsoDate,
@@ -113,6 +113,10 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
     videoUrl: null,
     videoFileName: null,
   });
+  const [uploadingQuizVideo, setUploadingQuizVideo] = useState(false);
+  const [quizVideoProgress, setQuizVideoProgress] = useState(0);
+  const [quizVideoError, setQuizVideoError] = useState<string | null>(null);
+  const quizVideoInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Inline PIN & Due Date management for selectedQuiz
   const [pinInput, setPinInput] = useState('');
@@ -295,6 +299,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
   const handleOpenCreateQuiz = () => {
     setQuizModalMode('create');
     setQuizToEdit(null);
+    setQuizVideoError(null);
+    setQuizVideoProgress(0);
     setQuizForm({
       title: '',
       description: '',
@@ -311,6 +317,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
   const handleOpenEditQuiz = (quiz: Quiz) => {
     setQuizModalMode('edit');
     setQuizToEdit(quiz);
+    setQuizVideoError(null);
+    setQuizVideoProgress(0);
     setQuizForm({
       title: quiz.title,
       description: quiz.description || '',
@@ -322,6 +330,29 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
       videoFileName: quiz.videoFileName || null,
     });
     setIsQuizModalOpen(true);
+  };
+
+  const handleQuizVideoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingQuizVideo(true);
+      setQuizVideoProgress(0);
+      setQuizVideoError(null);
+      const uploaded = await processUploadedMp4Video(file, (pct) => setQuizVideoProgress(pct));
+      setQuizForm((prev) => ({
+        ...prev,
+        videoUrl: uploaded.videoUrl,
+        videoFileName: uploaded.videoFileName,
+      }));
+    } catch (err: any) {
+      setQuizVideoError(err?.message || 'Failed to upload .mp4 video.');
+    } finally {
+      setUploadingQuizVideo(false);
+      if (quizVideoInputRef.current) {
+        quizVideoInputRef.current.value = '';
+      }
+    }
   };
 
   const handleSaveQuiz = async (e: React.FormEvent) => {
@@ -354,16 +385,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
           videoFileName: safeVideoFileName,
           updatedAt: new Date().toISOString(),
         };
-        await withTimeout(updateDoc(ref, updated), 8000, 'Updating quiz');
-        try {
-          await withTimeout(
-            syncQuizPinSession(quizToEdit.id, user.uid, cleanPin, cleanDue),
-            6000,
-            'Syncing quiz session'
-          );
-        } catch (syncErr) {
-          console.warn('Non-fatal sync notice while updating quiz:', syncErr);
-        }
+        await updateDoc(ref, updated);
+        await syncQuizPinSession(quizToEdit.id, user.uid, cleanPin, cleanDue);
         await writeAuditEntry('QUIZ_UPDATED', 'quizzes', quizToEdit.id, {
           title: cleanTitle,
           gamePin: cleanPin,
@@ -392,16 +415,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        await withTimeout(setDoc(ref, newQuiz), 8000, 'Creating quiz');
-        try {
-          await withTimeout(
-            syncQuizPinSession(ref.id, user.uid, cleanPin, cleanDue),
-            6000,
-            'Syncing new quiz session'
-          );
-        } catch (syncErr) {
-          console.warn('Non-fatal sync notice while creating quiz:', syncErr);
-        }
+        await setDoc(ref, newQuiz);
+        await syncQuizPinSession(ref.id, user.uid, cleanPin, cleanDue);
         await writeAuditEntry('QUIZ_CREATED', 'quizzes', ref.id, {
           title: cleanTitle,
           gamePin: cleanPin,
@@ -412,10 +427,8 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
       setIsQuizModalOpen(false);
       setQuizToEdit(null);
       await fetchQuizzes();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error saving quiz:', err);
-      const friendly = getUserFriendlyErrorMessage(err, 'Failed to save quiz.');
-      setGlobalError(friendly);
     } finally {
       setActionLoading(false);
     }
@@ -1423,90 +1436,6 @@ export const QuizManager: React.FC<QuizManagerProps> = ({ onStartLiveGame, onPre
                 </div>
               </div>
 
-              {/* Quiz Intro / Training Video Section */}
-              <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-slate-300">
-                      Quiz Intro / Training Video (Optional)
-                    </label>
-                    <p className="text-[11px] text-slate-400">
-                      Attach public video from Google Cloud Storage or Google Drive. Zero quota impact.
-                    </p>
-                  </div>
-                  {quizForm.videoUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setQuizForm({ ...quizForm, videoUrl: null, videoFileName: null })}
-                      className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer font-bold"
-                    >
-                      Remove Video
-                    </button>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="url"
-                      value={quizForm.videoUrl || ''}
-                      onChange={(e) => {
-                        const val = e.target.value.trim();
-                        const parsed = parseVideoSource(val);
-                        setQuizForm({
-                          ...quizForm,
-                          videoUrl: val || null,
-                          videoFileName: parsed?.inferredFileName || quizForm.videoFileName || 'Cloud-Video.mp4',
-                        });
-                      }}
-                      placeholder="https://storage.googleapis.com/... or https://drive.google.com/file/d/..."
-                      className="flex-1 px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs outline-none focus:border-[#00A191] font-mono"
-                    />
-                  </div>
-
-                  {quizForm.videoUrl && (
-                    <div className="flex items-center gap-2">
-                      {(() => {
-                        const parsed = parseVideoSource(quizForm.videoUrl);
-                        if (parsed?.sourceType === 'google-cloud-storage') {
-                          return (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                              <Cloud className="w-3 h-3 text-emerald-400" />
-                              <span>Detected: Google Cloud Storage (.mp4)</span>
-                            </span>
-                          );
-                        }
-                        if (parsed?.sourceType === 'google-drive') {
-                          return (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-sky-500/20 text-sky-300 border border-sky-500/40">
-                              <HardDrive className="w-3 h-3 text-sky-400" />
-                              <span>Detected: Google Drive Video Preview</span>
-                            </span>
-                          );
-                        }
-                        return (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-                            <Video className="w-3 h-3 text-indigo-400" />
-                            <span>External Cloud Video Stream</span>
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  )}
-
-                  {quizForm.videoUrl && (
-                    <div className="rounded-xl overflow-hidden border border-slate-800 bg-slate-950 p-1.5">
-                      <VideoPlayer
-                        videoUrl={quizForm.videoUrl}
-                        videoFileName={quizForm.videoFileName}
-                        maxHeightClass="max-h-44 sm:max-h-52"
-                        showFileNameBadge={true}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-1 items-end">
                 <div className="sm:col-span-5">
                   <label className="block text-xs font-bold uppercase text-slate-300 mb-1">
@@ -1818,7 +1747,13 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [videoProgress, setVideoProgress] = useState(0);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const videoInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Cloud URL vs File Upload mode
+  const [videoMode, setVideoMode] = useState<'url' | 'upload'>('url');
   const [customVideoUrl, setCustomVideoUrl] = useState(
     form.videoUrl && !form.videoUrl.startsWith('firestore-media://') ? form.videoUrl : ''
   );
@@ -1842,7 +1777,7 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
     }
     const safeUrl = sanitizeSafeUrl(trimmed);
     if (!safeUrl || (!safeUrl.startsWith('https://') && !safeUrl.startsWith('http://'))) {
-      setVideoError('Please enter a valid video URL starting with https:// (e.g. Google Cloud Storage, Google Drive, YouTube, or direct .mp4 link).');
+      setVideoError('Please enter a valid URL starting with https:// (e.g. from Google Cloud Storage or Google Drive).');
       return;
     }
     const parsed = parseVideoSource(safeUrl);
@@ -1850,7 +1785,7 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
     const chosenTitle =
       customVideoTitle.trim() ||
       parsed?.inferredFileName ||
-      'Embedded Video.mp4';
+      'Cloud Video.mp4';
 
     setForm((prev) => ({
       ...prev,
@@ -1867,6 +1802,7 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
       setForm({ ...question });
       setImageError(null);
       setVideoError(null);
+      setVideoProgress(0);
       setFormError(null);
     }
   }, [question.id]);
@@ -1889,6 +1825,29 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
     }
   };
 
+  const handleVideoFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingVideo(true);
+      setVideoProgress(0);
+      setVideoError(null);
+      const uploaded = await processUploadedMp4Video(file, (pct) => setVideoProgress(pct));
+      setForm((prev) => ({
+        ...prev,
+        videoUrl: uploaded.videoUrl,
+        videoFileName: uploaded.videoFileName,
+      }));
+    } catch (err: any) {
+      setVideoError(err?.message || 'Failed to upload .mp4 video.');
+    } finally {
+      setUploadingVideo(false);
+      if (videoInputRef.current) {
+        videoInputRef.current.value = '';
+      }
+    }
+  };
+
   const handleOptionChange = (idx: number, text: string) => {
     const nextOpts = [...form.options];
     nextOpts[idx].text = sanitizeLiveInput(text, 200, false);
@@ -1897,7 +1856,7 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting || uploadingImage) return;
+    if (isSubmitting || uploadingImage || uploadingVideo) return;
 
     const cleanPrompt = sanitizePlainText(form.questionText, { maxLength: 300, allowNewlines: true });
     if (!cleanPrompt) {
@@ -2003,206 +1962,243 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
           </div>
 
           {/* Question Video Section: Cloud Storage / Google Drive URL (Recommended) or Direct Upload */}
-          {/* Question Video Section: Dedicated Video Embed (Google Cloud Storage, Drive, YouTube, Vimeo, etc.) */}
           <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
-                  Question Video Embed (Zero Database Quota Impact)
+                  Question Video (.mp4 / Cloud Stream) (Optional)
                 </label>
                 <p className="text-[11px] text-slate-400">
-                  Provide a public video link from Google Cloud Storage, Google Drive, YouTube, or direct MP4. Rendered directly on the platform with 0 Firestore write operations.
+                  Attach video from Google Cloud Storage, Google Drive, or upload directly.
                 </p>
               </div>
 
-              {form.videoUrl && (
+              {/* Mode Toggle */}
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setVideoMode('url')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
+                    videoMode === 'url'
+                      ? 'bg-[#00A191] text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Cloud className="w-3.5 h-3.5" />
+                  <span>Cloud URL (Recommended)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setVideoMode('upload')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
+                    videoMode === 'upload'
+                      ? 'bg-[#00A191] text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>File Upload</span>
+                </button>
+              </div>
+            </div>
+
+            {/* URL Input Mode */}
+            {videoMode === 'url' && (
+              <div className="space-y-2 pt-1">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      type="url"
+                      value={customVideoUrl}
+                      onChange={(e) => {
+                        setCustomVideoUrl(e.target.value);
+                        if (videoError) setVideoError(null);
+                      }}
+                      placeholder="https://storage.googleapis.com/... or https://drive.google.com/file/d/.../view"
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs outline-none focus:border-[#00A191] font-mono"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleApplyCustomVideoUrl}
+                    className="px-4 py-2 rounded-xl bg-[#00A191] hover:bg-[#00bda9] text-white text-xs font-bold transition-colors shrink-0 shadow-sm cursor-pointer"
+                  >
+                    Apply Link
+                  </button>
+                </div>
+
+                {/* Source Provider Detection Badge */}
+                {customVideoUrl && (
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const parsed = parseVideoSource(customVideoUrl);
+                      if (parsed?.sourceType === 'google-cloud-storage') {
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            <Cloud className="w-3 h-3 text-emerald-400" />
+                            <span>Detected: Google Cloud Storage (.mp4)</span>
+                          </span>
+                        );
+                      }
+                      if (parsed?.sourceType === 'google-drive') {
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-sky-500/20 text-sky-300 border border-sky-500/40">
+                            <HardDrive className="w-3 h-3 text-sky-400" />
+                            <span>Detected: Google Drive Video Preview</span>
+                          </span>
+                        );
+                      }
+                      if (parsed?.sourceType === 'direct-url') {
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                            <Film className="w-3 h-3 text-indigo-400" />
+                            <span>Detected: Direct Cloud Video Stream</span>
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                )}
+
+                {/* Optional Custom Label */}
+                <div className="flex items-center gap-2 pt-0.5">
+                  <input
+                    type="text"
+                    value={customVideoTitle}
+                    onChange={(e) => setCustomVideoTitle(e.target.value)}
+                    placeholder="Video Display Label / Filename (optional, e.g. Spot-The-Phish-1.mp4)"
+                    className="flex-1 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs outline-none focus:border-slate-600"
+                  />
+                </div>
+
+                {/* Zero Quota Callout & Guide Toggle */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-400">
+                  <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>0 Firestore writes consumed • No database quota impact</span>
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowCloudGuide(!showCloudGuide)}
+                    className="inline-flex items-center gap-1 text-[#00A191] hover:underline font-bold cursor-pointer"
+                  >
+                    <HelpCircle className="w-3 h-3" />
+                    <span>{showCloudGuide ? 'Hide Instructions' : 'How to get public URL'}</span>
+                  </button>
+                </div>
+
+                {/* Step-by-Step Instructions */}
+                {showCloudGuide && (
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-[#00A191]/30 text-xs text-slate-300 space-y-2.5">
+                    <div className="font-bold text-white flex items-center gap-1.5">
+                      <Cloud className="w-4 h-4 text-[#00A191]" />
+                      <span>How to host videos externally:</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                        <span className="font-bold text-emerald-400 block">Google Cloud Storage (GCS)</span>
+                        <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
+                          <li>Upload your .mp4 video into your GCS Bucket.</li>
+                          <li>Click the file's Permissions / Edit access.</li>
+                          <li>Add <code className="text-white bg-slate-800 px-1 rounded">allUsers</code> with Role: <code className="text-white bg-slate-800 px-1 rounded">Storage Object Viewer</code>.</li>
+                          <li>Copy Public URL (<code className="text-slate-300">https://storage.googleapis.com/...</code>) and paste above!</li>
+                        </ol>
+                      </div>
+
+                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                        <span className="font-bold text-sky-400 block">Google Drive Storage</span>
+                        <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
+                          <li>Upload your .mp4 video to Google Drive.</li>
+                          <li>Right-click the video file and select <strong>Share</strong>.</li>
+                          <li>Change General access to <strong>"Anyone with the link"</strong> (Viewer).</li>
+                          <li>Click <strong>Copy link</strong> and paste above!</li>
+                        </ol>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Direct File Upload Mode */}
+            {videoMode === 'upload' && (
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-slate-900 border border-slate-800">
+                  <div className="text-xs text-slate-300">
+                    <span className="font-bold block">Upload .mp4 Video File</span>
+                    <span className="text-[11px] text-slate-500">
+                      Slices video into Firestore chunks. For high traffic, Google Cloud Storage URL is recommended.
+                    </span>
+                  </div>
+
+                  <input
+                    ref={videoInputRef}
+                    type="file"
+                    accept=".mp4,video/mp4"
+                    onChange={handleVideoFileSelect}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => videoInputRef.current?.click()}
+                    disabled={uploadingVideo}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0D1F3C] hover:bg-[#162f59] text-[#00A191] border border-[#00A191]/40 text-xs font-bold cursor-pointer transition-colors disabled:opacity-50"
+                  >
+                    {uploadingVideo ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Uploading {videoProgress}%</span>
+                      </>
+                    ) : (
+                      <>
+                        <Video className="w-3.5 h-3.5" />
+                        <span>{form.videoUrl ? 'Change .mp4 File' : 'Select .mp4 File'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {uploadingVideo && (
+                  <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden border border-slate-800">
+                    <div
+                      className="h-full bg-gradient-to-r from-[#00A191] to-[#F05A28] transition-all duration-200"
+                      style={{ width: `${videoProgress}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {videoError && (
+              <p className="text-xs text-[#F05A28] font-medium pt-1">{videoError}</p>
+            )}
+
+            {/* Active Video Preview Player */}
+            {form.videoUrl && !uploadingVideo && (
+              <div className="relative pt-2">
+                <VideoPlayer
+                  videoUrl={form.videoUrl}
+                  videoFileName={form.videoFileName}
+                  maxHeightClass="max-h-48"
+                  showFileNameBadge
+                />
                 <button
                   type="button"
                   onClick={() => {
                     setForm({ ...form, videoUrl: null, videoFileName: null });
                     setCustomVideoUrl('');
                     setCustomVideoTitle('');
-                    setVideoError(null);
                   }}
-                  className="text-xs text-rose-400 hover:text-rose-300 font-bold cursor-pointer inline-flex items-center gap-1"
+                  title="Remove Video"
+                  className="absolute top-4 right-3 p-1.5 rounded-xl bg-slate-900/90 hover:bg-rose-600 text-slate-300 hover:text-white border border-slate-700 cursor-pointer transition-colors shadow-lg"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Remove Video</span>
+                  <Trash2 className="w-4 h-4" />
                 </button>
-              )}
-            </div>
-
-            <div className="space-y-2 pt-1">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="flex-1 relative">
-                  <input
-                    type="url"
-                    value={customVideoUrl}
-                    onChange={(e) => {
-                      setCustomVideoUrl(e.target.value);
-                      if (videoError) setVideoError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleApplyCustomVideoUrl();
-                      }
-                    }}
-                    placeholder="https://storage.googleapis.com/... or https://drive.google.com/... or https://youtube.com/..."
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs outline-none focus:border-[#00A191] font-mono"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleApplyCustomVideoUrl}
-                  className="px-4 py-2 rounded-xl bg-[#00A191] hover:bg-[#00bda9] text-white text-xs font-bold transition-colors shrink-0 shadow-sm cursor-pointer inline-flex items-center gap-1.5"
-                >
-                  <Video className="w-3.5 h-3.5" />
-                  <span>Apply Video Link</span>
-                </button>
-              </div>
-
-              {/* Source Provider Detection Badge */}
-              {customVideoUrl && (
-                <div className="flex items-center gap-2">
-                  {(() => {
-                    const parsed = parseVideoSource(customVideoUrl);
-                    if (parsed?.sourceType === 'google-cloud-storage') {
-                      return (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                          <Cloud className="w-3 h-3 text-emerald-400" />
-                          <span>Detected: Google Cloud Storage (.mp4)</span>
-                        </span>
-                      );
-                    }
-                    if (parsed?.sourceType === 'google-drive') {
-                      return (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-sky-500/20 text-sky-300 border border-sky-500/40">
-                          <HardDrive className="w-3 h-3 text-sky-400" />
-                          <span>Detected: Google Drive Video Preview</span>
-                        </span>
-                      );
-                    }
-                    if (parsed?.sourceType === 'youtube') {
-                      return (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-rose-500/20 text-rose-300 border border-rose-500/40">
-                          <Video className="w-3 h-3 text-rose-400" />
-                          <span>Detected: YouTube Video Embed</span>
-                        </span>
-                      );
-                    }
-                    if (parsed?.sourceType === 'vimeo') {
-                      return (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                          <Film className="w-3 h-3 text-cyan-400" />
-                          <span>Detected: Vimeo Video Embed</span>
-                        </span>
-                      );
-                    }
-                    if (parsed?.sourceType === 'direct-url') {
-                      return (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-                          <Film className="w-3 h-3 text-indigo-400" />
-                          <span>Detected: Direct Cloud Video Stream</span>
-                        </span>
-                      );
-                    }
-                    return null;
-                  })()}
-                </div>
-              )}
-
-              {/* Optional Custom Label */}
-              <div className="flex items-center gap-2 pt-0.5">
-                <input
-                  type="text"
-                  value={customVideoTitle}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setCustomVideoTitle(val);
-                    if (form.videoUrl) {
-                      setForm((prev) => ({ ...prev, videoFileName: val.trim() || 'Embedded Video.mp4' }));
-                    }
-                  }}
-                  placeholder="Video Display Label / Filename (optional, e.g. Cyber-Security-Awareness.mp4)"
-                  className="flex-1 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs outline-none focus:border-slate-600"
-                />
-              </div>
-
-              {/* Zero Quota Callout & Guide Toggle */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-400">
-                <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
-                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                  <span>0 Firestore writes consumed • Zero database quota impact</span>
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => setShowCloudGuide(!showCloudGuide)}
-                  className="inline-flex items-center gap-1 text-[#00A191] hover:underline font-bold cursor-pointer"
-                >
-                  <HelpCircle className="w-3 h-3" />
-                  <span>{showCloudGuide ? 'Hide Instructions' : 'How to host & embed video links'}</span>
-                </button>
-              </div>
-
-              {/* Step-by-Step Instructions */}
-              {showCloudGuide && (
-                <div className="p-3.5 rounded-xl bg-slate-900 border border-[#00A191]/30 text-xs text-slate-300 space-y-2.5">
-                  <div className="font-bold text-white flex items-center gap-1.5">
-                    <Cloud className="w-4 h-4 text-[#00A191]" />
-                    <span>How to host and embed videos without database quota:</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px]">
-                    <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                      <span className="font-bold text-emerald-400 block">Google Cloud Storage (GCS)</span>
-                      <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
-                        <li>Upload your .mp4 video into your GCS Bucket.</li>
-                        <li>Click the file's Permissions / Edit access.</li>
-                        <li>Add <code className="text-white bg-slate-800 px-1 rounded">allUsers</code> with Role: <code className="text-white bg-slate-800 px-1 rounded">Storage Object Viewer</code>.</li>
-                        <li>Copy Public URL (<code className="text-slate-300">https://storage.googleapis.com/...</code>) and paste above!</li>
-                      </ol>
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                      <span className="font-bold text-sky-400 block">Google Drive Storage</span>
-                      <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
-                        <li>Upload your .mp4 video to Google Drive.</li>
-                        <li>Right-click the video file and select <strong>Share</strong>.</li>
-                        <li>Change General access to <strong>"Anyone with the link"</strong> (Viewer).</li>
-                        <li>Click <strong>Copy link</strong> and paste above!</li>
-                      </ol>
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                      <span className="font-bold text-rose-400 block">YouTube / Vimeo</span>
-                      <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
-                        <li>Upload video (Public or Unlisted).</li>
-                        <li>Click <strong>Share</strong> and copy the video URL.</li>
-                        <li>Paste URL above (e.g. <code className="text-slate-300">https://youtu.be/...</code>).</li>
-                        <li>Video embeds seamlessly on the platform for all players!</li>
-                      </ol>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {videoError && (
-              <p className="text-xs text-[#F05A28] font-medium pt-1">{videoError}</p>
-            )}
-
-            {/* Active Video Preview Player Embedded Directly */}
-            {form.videoUrl && (
-              <div className="relative pt-2">
-                <VideoPlayer
-                  videoUrl={form.videoUrl}
-                  videoFileName={form.videoFileName}
-                  maxHeightClass="max-h-52"
-                  showFileNameBadge
-                />
               </div>
             )}
           </div>
@@ -2377,7 +2373,7 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || uploadingImage}
+              disabled={isSubmitting || uploadingImage || uploadingVideo}
               className="flex-1 py-2.5 rounded-xl font-bold text-xs bg-[#00A191] hover:bg-[#00bda9] text-white cursor-pointer shadow-lg shadow-[#00A191]/30 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
             >
               {isSubmitting ? (

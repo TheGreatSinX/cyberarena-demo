@@ -148,8 +148,6 @@ export async function processUploadedMp4Video(
 export type VideoSourceType =
   | 'google-drive'
   | 'google-cloud-storage'
-  | 'youtube'
-  | 'vimeo'
   | 'direct-url'
   | 'firestore-media';
 
@@ -164,45 +162,12 @@ export interface ParsedVideoSource {
 
 /**
  * Parses any video URL to identify its origin (Google Cloud Storage, Google Drive,
- * YouTube, Vimeo, generic HTTPS streaming URL, or Firestore chunked media), providing embed and stream endpoints.
+ * generic HTTPS streaming URL, or Firestore chunked media), providing embed and stream endpoints.
  */
 export function parseVideoSource(rawUrl?: string | null): ParsedVideoSource | null {
   if (!rawUrl) return null;
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;
-
-  // YouTube video link (watch, youtu.be, embed, shorts)
-  if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be')) {
-    const ytMatch =
-      trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|watch\?.+&v=))([\w-]{11})/i);
-    const videoId = ytMatch ? ytMatch[1] : '';
-    if (videoId) {
-      return {
-        sourceType: 'youtube',
-        rawUrl: trimmed,
-        streamUrl: `https://www.youtube.com/watch?v=${videoId}`,
-        embedUrl: `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`,
-        displayBadge: 'YouTube Video',
-        inferredFileName: `YouTube (${videoId}).mp4`,
-      };
-    }
-  }
-
-  // Vimeo video link
-  if (trimmed.includes('vimeo.com')) {
-    const vimeoMatch = trimmed.match(/(?:vimeo\.com\/|player\.vimeo\.com\/video\/)([0-9]+)/i);
-    const videoId = vimeoMatch ? vimeoMatch[1] : '';
-    if (videoId) {
-      return {
-        sourceType: 'vimeo',
-        rawUrl: trimmed,
-        streamUrl: `https://vimeo.com/${videoId}`,
-        embedUrl: `https://player.vimeo.com/video/${videoId}?title=0&byline=0`,
-        displayBadge: 'Vimeo Video',
-        inferredFileName: `Vimeo (${videoId}).mp4`,
-      };
-    }
-  }
 
   // Google Drive share link (e.g. https://drive.google.com/file/d/FILE_ID/view?usp=sharing)
   if (trimmed.includes('drive.google.com')) {
@@ -272,18 +237,15 @@ export function parseVideoSource(rawUrl?: string | null): ParsedVideoSource | nu
 
 /**
  * Resolves a stored `videoUrl` (either Google Cloud Storage, Google Drive,
- * YouTube, Vimeo, `firestore-media://{mediaId}`, `data:video/mp4;base64,...`, or `https://...`)
+ * `firestore-media://{mediaId}`, `data:video/mp4;base64,...`, or `https://...`)
  * into a playable URL.
  */
 export async function resolvePlayableVideoUrl(videoUrl?: string | null): Promise<string | null> {
   if (!videoUrl) return null;
 
   const parsed = parseVideoSource(videoUrl);
-  if (parsed?.embedUrl) {
-    return parsed.embedUrl;
-  }
-  if (parsed?.sourceType === 'google-cloud-storage' || parsed?.sourceType === 'direct-url') {
-    return parsed.streamUrl;
+  if (parsed?.sourceType === 'google-drive') {
+    return parsed.embedUrl || parsed.streamUrl;
   }
 
   const cached = resolvedVideoBlobCache.get(videoUrl);
