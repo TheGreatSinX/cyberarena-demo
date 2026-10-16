@@ -41,9 +41,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const parsed = parseVideoSource(videoUrl);
     setParsedSource(parsed);
 
-    // If it's a YouTube video or Google Drive share link, we embed the preview player directly
-    if ((parsed?.sourceType === 'youtube' || parsed?.sourceType === 'google-drive') && parsed.embedUrl) {
+    // If it's a YouTube video, use its secure embedUrl directly
+    if (parsed?.sourceType === 'youtube' && parsed.embedUrl) {
       setPlayableSrc(parsed.embedUrl);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    // Google Drive share links cannot be embedded inside iframes due to Google's frame-ancestors CSP
+    if (parsed?.sourceType === 'google-drive') {
+      setPlayableSrc(parsed.streamUrl);
       setLoading(false);
       setError(null);
       return;
@@ -72,9 +80,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   if (!videoUrl) return null;
 
-  const isYouTubeEmbed = parsedSource?.sourceType === 'youtube';
-  const isGoogleDriveEmbed = parsedSource?.sourceType === 'google-drive' && playableSrc?.includes('drive.google.com');
-  const isIframeEmbed = isYouTubeEmbed || isGoogleDriveEmbed;
+  const isYouTube = parsedSource?.sourceType === 'youtube';
+  const isGoogleDrive = parsedSource?.sourceType === 'google-drive';
 
   return (
     <div className={`w-full flex flex-col items-center ${className}`}>
@@ -88,17 +95,40 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
           <span>{error}</span>
         </div>
+      ) : isGoogleDrive ? (
+        // Google Drive security policy prevents iframe embedding: show dedicated notice & external link
+        <div className="w-full p-4 rounded-2xl bg-slate-950 border border-sky-500/30 flex flex-col items-center text-center gap-2.5">
+          <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400">
+            <HardDrive className="w-5 h-5" />
+          </div>
+          <div>
+            <h5 className="text-xs font-bold text-white uppercase tracking-wider">
+              Google Drive Video Link
+            </h5>
+            <p className="text-[11px] text-slate-400 mt-0.5 max-w-sm">
+              Google Drive prevents in-app video embedding. For seamless live quiz video playback, please use a <strong className="text-red-400">YouTube</strong> video link instead.
+            </p>
+          </div>
+          <a
+            href={parsedSource?.streamUrl || videoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-colors shadow-sm"
+          >
+            <span>Open in Google Drive</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        </div>
       ) : playableSrc ? (
         <div className="w-full flex flex-col items-center gap-1.5">
           <div className="relative w-full flex justify-center rounded-2xl overflow-hidden bg-slate-950/90 border border-slate-700/80 p-1.5 shadow-lg">
-            {isIframeEmbed ? (
+            {isYouTube ? (
               <div className="w-full aspect-video min-h-[190px] max-h-80 rounded-xl overflow-hidden bg-black flex items-center justify-center">
                 <iframe
                   src={playableSrc}
-                  title={videoFileName || (isYouTubeEmbed ? 'YouTube Video Player' : 'Google Drive Video')}
+                  title={videoFileName || 'YouTube Video Player'}
                   className="w-full h-full border-0 rounded-xl"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-                  allowFullScreen
                 />
               </div>
             ) : (
