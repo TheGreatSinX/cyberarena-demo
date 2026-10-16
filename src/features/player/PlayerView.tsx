@@ -27,6 +27,7 @@ import {
   Calendar,
   Loader2,
   AlertCircle,
+  Award,
 } from 'lucide-react';
 
 interface PlayerViewProps {
@@ -526,6 +527,13 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
               Question {currentIdx + 1} of {allQuestions.length}
             </span>
 
+            {currentQuestion?.videoUrl && (
+              <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
+                <Award className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Video Question • Full Points (No Speed Penalty)</span>
+              </span>
+            )}
+
             {effectiveDueDate && (
               <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs text-slate-300 font-mono">
                 <Calendar className="w-3.5 h-3.5 text-[#F05A28]" />
@@ -694,10 +702,18 @@ export const PlayerView: React.FC<PlayerViewProps> = ({ session, onExit }) => {
                   >
                     {selectedOptionId
                       ? submissionResult.isCorrect
-                        ? `CORRECT! +${submissionResult.pointsAwarded} pts`
+                        ? currentQuestion?.videoUrl
+                          ? `CORRECT! +${submissionResult.pointsAwarded} pts (Full Video Points)`
+                          : `CORRECT! +${submissionResult.pointsAwarded} pts`
                         : 'INCORRECT'
                       : 'TIME EXPIRED'}
                   </span>
+                  {currentQuestion?.videoUrl && submissionResult.isCorrect && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded-full border border-emerald-400/30">
+                      <Award className="w-3 h-3 text-emerald-400" />
+                      Flat Scoring
+                    </span>
+                  )}
                   {playerData?.streak && playerData.streak > 1 && submissionResult.isCorrect ? (
                     <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded-full border border-amber-400/30">
                       <Flame className="w-3.5 h-3.5 fill-amber-400" />

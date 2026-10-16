@@ -2043,12 +2043,12 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
                     const parsed = parseVideoSource(customVideoUrl);
                     if (parsed?.sourceType === 'google-drive') {
                       return (
-                        <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs">
-                          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        <div className="flex items-start gap-2 p-2.5 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-200 text-xs">
+                          <HardDrive className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
                           <div className="space-y-0.5 text-[11px]">
-                            <span className="font-bold block">Google Drive blocks in-app video playback</span>
-                            <span className="text-amber-300/80 block">
-                              Google Drive enforces strict security policies preventing external framing. For guaranteed playback, please use a <strong className="text-white">YouTube</strong> link.
+                            <span className="font-bold text-white block">Google Drive Video Link Detected</span>
+                            <span className="text-sky-200/90 block">
+                              Google Drive preview will embed into the quiz. <strong>Important:</strong> In Google Drive, ensure link sharing is set to <strong className="text-white">&ldquo;Anyone with the link can view&rdquo;</strong> so all participants can view smoothly.
                             </span>
                           </div>
                         </div>
@@ -2099,7 +2099,7 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
                   className="inline-flex items-center gap-1 text-[#00A191] hover:underline font-bold cursor-pointer"
                 >
                   <HelpCircle className="w-3 h-3" />
-                  <span>{showCloudGuide ? 'Hide Instructions' : 'How to add YouTube videos'}</span>
+                  <span>{showCloudGuide ? 'Hide Instructions' : 'How to add YouTube & Google Drive videos'}</span>
                 </button>
               </div>
 
@@ -2107,27 +2107,42 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
               {showCloudGuide && (
                 <div className="p-3.5 rounded-xl bg-slate-900 border border-[#00A191]/30 text-xs text-slate-300 space-y-2.5">
                   <div className="font-bold text-white flex items-center gap-1.5">
-                    <Cloud className="w-4 h-4 text-[#00A191]" />
-                    <span>How to use YouTube videos:</span>
+                    <Film className="w-4 h-4 text-[#00A191]" />
+                    <span>How to add YouTube and Google Drive videos:</span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px]">
                     <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
                       <span className="font-bold text-red-400 flex items-center gap-1">
                         <svg className="w-3 h-3 text-red-500 fill-current" viewBox="0 0 24 24">
                           <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
                         </svg>
-                        <span>Any YouTube Link or Code</span>
+                        <span>YouTube Videos</span>
                       </span>
                       <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
-                        <li>Copy any YouTube URL (<code className="text-white bg-slate-800 px-1 rounded">youtube.com/watch?v=...</code>, <code className="text-white bg-slate-800 px-1 rounded">youtu.be/...</code>, Shorts, or Embed code).</li>
+                        <li>Copy any YouTube URL (<code className="text-white bg-slate-800 px-1 rounded">watch?v=...</code>, <code className="text-white bg-slate-800 px-1 rounded">youtu.be/...</code>, Shorts, or Embed).</li>
                         <li>Paste it into the link field above.</li>
                         <li>Click <strong>Apply Link</strong> or directly click <strong>Save Question</strong>.</li>
                       </ol>
                     </div>
 
                     <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                      <span className="font-bold text-emerald-400 block">Direct Cloud Stream (GCS / CDN)</span>
+                      <span className="font-bold text-sky-400 flex items-center gap-1">
+                        <HardDrive className="w-3 h-3 text-sky-400" />
+                        <span>Google Drive Videos</span>
+                      </span>
+                      <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
+                        <li>In Google Drive, click <strong>Share</strong> on your video file.</li>
+                        <li>Set access to <strong>&ldquo;Anyone with the link can view&rdquo;</strong>.</li>
+                        <li>Copy the link and paste above.</li>
+                      </ol>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                      <span className="font-bold text-emerald-400 flex items-center gap-1">
+                        <Cloud className="w-3 h-3 text-emerald-400" />
+                        <span>Cloud Stream (GCS/S3)</span>
+                      </span>
                       <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
                         <li>Upload your video to public Cloud Storage (GCS/S3).</li>
                         <li>Ensure public read access is enabled.</li>

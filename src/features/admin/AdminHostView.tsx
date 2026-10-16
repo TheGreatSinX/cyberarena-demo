@@ -26,6 +26,7 @@ import {
   Maximize2,
   X,
   Link2,
+  Award,
 } from 'lucide-react';
 
 interface AdminHostViewProps {
@@ -506,9 +507,17 @@ export const AdminHostView: React.FC<AdminHostViewProps> = ({ gameId, onFinishGa
         <div className="flex-1 flex flex-col justify-between max-w-4xl w-full mx-auto">
           {/* Question Stats Bar */}
           <div className="flex flex-wrap items-center justify-between gap-2 p-3 sm:p-4 rounded-2xl bg-[#0D1F3C] border border-[#E5E5E5]/20">
-            <span className="text-xs sm:text-sm font-bold text-[#E5E5E5]">
-              Question {(game.currentQuestionIndex || 0) + 1} of {questions.length}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs sm:text-sm font-bold text-[#E5E5E5]">
+                Question {(game.currentQuestionIndex || 0) + 1} of {questions.length}
+              </span>
+              {activeQuestion?.videoUrl && (
+                <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                  <Award className="w-3 h-3 text-emerald-400" />
+                  <span>Video Observation • Flat Points</span>
+                </span>
+              )}
+            </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 px-3 py-1 rounded-full bg-slate-950 font-mono text-base sm:text-lg font-black text-[#F05A28] border border-[#F05A28]/30">
               <Clock className="w-4 h-4 text-[#F05A28]" />

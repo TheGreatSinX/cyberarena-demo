@@ -434,7 +434,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                 <div className="min-w-0">
                   <div className="inline-flex items-center gap-1.5 text-[#00A191] text-[10px] sm:text-xs font-bold uppercase tracking-wider">
                     <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">Infopro Business solutions (IBSI)</span>
+                    <span className="truncate">InfoPro Business Solutions, Inc.</span>
                   </div>
                   <h2 className="text-lg sm:text-2xl font-black tracking-tight text-white">
                     DATA PRIVACY <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#F05A28] via-[#E5E5E5] to-[#00A191]">NOTICE</span>
@@ -446,19 +446,23 @@ export const LandingView: React.FC<LandingViewProps> = ({
             {/* Modal Scrollable Content */}
             <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 text-sm sm:text-base text-slate-200 leading-relaxed bg-slate-950/60">
               <p>
-                We at <strong className="text-white font-bold">Infopro Business solutions (IBSI)</strong> understand the importance of your privacy and are committed to protecting your personal information in accordance with the <strong className="text-[#00A191] font-semibold">Data Privacy Act of 2012</strong>.
+                We, at <strong className="text-white font-bold">InfoPro Business Solutions, Inc. (&ldquo;the Company&rdquo;)</strong>, understand the importance of your privacy and are committed to maintaining the confidentiality of your Personal Information and Sensitive Personal Information (collectively, &ldquo;Personal Data&rdquo;), pursuant to the provisions of the <strong className="text-[#00A191] font-semibold">Data Privacy Act of 2012</strong>.
               </p>
 
               <p>
-                Please be informed that any personal information you provide through this game will be collected and processed solely for purposes related to cybersecurity awareness activity, including game participation, score tracking, winner verification, and the dissemination of game-related announcements and updates.
+                Please be informed that any Personal Data you provide through this game will be collected and processed solely for purposes related to Cybersecurity awareness activity, including game participation, score tracking, winner verification, and the dissemination of game-related announcements and updates.
               </p>
 
               <p>
-                Your personal information will be securely stored and protected in accordance with <strong className="text-white font-semibold">EDC&apos;s</strong> policies, systems, and procedures.
-              </p>
-
-              <p>
-                By submitting this form, you consent to the collection and processing of your personal information for the purposes stated in this Privacy Notice.
+                By clicking the &ldquo;Acknowledge &amp; Return&rdquo;, you are hereby giving your consent to the processing of your Personal Data in accordance with this Privacy Notice. Should you have any inquiries, concerns, feedback and/or complaints, you may address them to{' '}
+                <a
+                  href="mailto:dpo@ibs-ph.com"
+                  className="inline-flex items-center gap-1 font-bold text-[#00A191] hover:text-[#F05A28] underline underline-offset-4 transition-colors"
+                >
+                  <Mail className="w-3.5 h-3.5 inline" />
+                  dpo@ibs-ph.com
+                </a>
+                .
               </p>
             </div>
 

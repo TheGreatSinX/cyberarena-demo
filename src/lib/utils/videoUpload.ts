@@ -217,8 +217,7 @@ export function parseVideoSource(rawUrl?: string | null): ParsedVideoSource | nu
   }
 
   // 2. Google Drive share link (e.g. https://drive.google.com/file/d/FILE_ID/view?usp=sharing)
-  // NOTE: Google Drive enforces "frame-ancestors https://drive.google.com" CSP headers,
-  // which blocks iframe embedding from external origins.
+  // 2. Google Drive share/preview link (e.g. https://drive.google.com/file/d/FILE_ID/view or /preview)
   if (trimmed.includes('drive.google.com')) {
     const fileIdMatch =
       trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/i) ||
@@ -226,14 +225,15 @@ export function parseVideoSource(rawUrl?: string | null): ParsedVideoSource | nu
       trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/i);
 
     const fileId = fileIdMatch ? fileIdMatch[1] : '';
+    const embedUrl = fileId ? `https://drive.google.com/file/d/${fileId}/preview` : null;
     return {
       sourceType: 'google-drive',
       rawUrl: trimmed,
       streamUrl: `https://drive.google.com/file/d/${fileId || ''}/view`,
-      embedUrl: null, // intentionally null: Google Drive CSP blocks framing!
-      isEmbedBlocked: true,
+      embedUrl,
       displayBadge: 'Google Drive',
       inferredFileName: fileId ? `Drive Video (${fileId.slice(0, 8)}...)` : 'Drive Video',
+      videoId: fileId,
     };
   }
 
@@ -295,7 +295,7 @@ export async function resolvePlayableVideoUrl(videoUrl?: string | null): Promise
     return parsed.embedUrl || parsed.streamUrl;
   }
   if (parsed?.sourceType === 'google-drive') {
-    return parsed.streamUrl;
+    return parsed.embedUrl || parsed.streamUrl;
   }
 
   const cached = resolvedVideoBlobCache.get(videoUrl);

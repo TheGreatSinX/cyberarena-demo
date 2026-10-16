@@ -443,6 +443,8 @@ export async function syncQuizPinSession(
         correctOptionId: qData.correctOptionId,
         explanation: qData.explanation || null,
         points: qData.points,
+        videoUrl: qData.videoUrl || null,
+        hasVideo: Boolean(qData.videoUrl),
       });
     }
 
@@ -848,24 +850,46 @@ export async function submitPlayerAnswer(
   let correctOptionId = '';
   let basePoints = 1000;
   let explanation: string | null = null;
+  let hasVideo = false;
 
   if (privateQSnap && privateQSnap.exists()) {
     const privateQData = privateQSnap.data() as {
       correctOptionId: string;
       points: number;
       explanation?: string | null;
+      videoUrl?: string | null;
+      hasVideo?: boolean;
     };
     correctOptionId = privateQData.correctOptionId;
     basePoints = privateQData.points || 1000;
     explanation = privateQData.explanation || null;
-  } else if (gameData.quizId) {
+    hasVideo = Boolean(privateQData.videoUrl || privateQData.hasVideo);
+  }
+
+  // Fallback check on public questions subcollection if hasVideo not recorded in privateQuestions
+  if (!hasVideo) {
+    const pubQSnap = await getDoc(doc(db, `games/${gameId}/questions`, questionId)).catch(() => null);
+    if (pubQSnap && pubQSnap.exists()) {
+      const pubData = pubQSnap.data();
+      if (pubData?.videoUrl) {
+        hasVideo = true;
+      }
+    }
+  }
+
+  if ((!correctOptionId || !hasVideo) && gameData.quizId) {
     // Fallback to parent quiz question doc if privateQuestions wasn't synced yet
-    const origQSnap = await getDoc(doc(db, `quizzes/${gameData.quizId}/questions`, questionId));
-    if (origQSnap.exists()) {
+    const origQSnap = await getDoc(doc(db, `quizzes/${gameData.quizId}/questions`, questionId)).catch(() => null);
+    if (origQSnap && origQSnap.exists()) {
       const origQ = origQSnap.data() as Question;
-      correctOptionId = origQ.correctOptionId;
-      basePoints = origQ.points || 1000;
-      explanation = origQ.explanation || null;
+      if (!correctOptionId) {
+        correctOptionId = origQ.correctOptionId;
+        basePoints = origQ.points || 1000;
+        explanation = origQ.explanation || null;
+      }
+      if (origQ.videoUrl) {
+        hasVideo = true;
+      }
     }
   }
 
@@ -878,11 +902,17 @@ export async function submitPlayerAnswer(
       : Math.max(0, Date.now() - (gameData.questionStartedAt || Date.now()));
 
   if (isCorrect) {
-    const totalTimeMs = 20000;
-    const speedRatio = Math.min(1, responseTimeMs / totalTimeMs);
-    // Speed multiplier from 1.0 (instant) down to 0.5 (at time limit)
-    const multiplier = 1 - speedRatio * 0.5;
-    pointsAwarded = Math.round(basePoints * multiplier);
+    if (hasVideo) {
+      // Option 1: Video questions award full base points (no speed decay penalty)
+      // to guarantee fairness across participants regardless of internet speed, buffering delays, or video duration.
+      pointsAwarded = basePoints;
+    } else {
+      const totalTimeMs = 20000;
+      const speedRatio = Math.min(1, responseTimeMs / totalTimeMs);
+      // Speed multiplier from 1.0 (instant) down to 0.5 (at time limit)
+      const multiplier = 1 - speedRatio * 0.5;
+      pointsAwarded = Math.round(basePoints * multiplier);
+    }
   }
 
   const newScore = (playerData.score || 0) + pointsAwarded;
