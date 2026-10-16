@@ -1966,10 +1966,10 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
-                  Question Video (.mp4 / Cloud Stream) (Optional)
+                  Question Video (YouTube / .mp4 / Cloud Stream) (Optional)
                 </label>
                 <p className="text-[11px] text-slate-400">
-                  Attach video from Google Cloud Storage, Google Drive, or upload directly.
+                  Attach video from YouTube, Google Drive, Google Cloud Storage, or upload directly.
                 </p>
               </div>
 
@@ -1985,7 +1985,7 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
                   }`}
                 >
                   <Cloud className="w-3.5 h-3.5" />
-                  <span>Cloud URL (Recommended)</span>
+                  <span>YouTube / Cloud Link (Recommended)</span>
                 </button>
 
                 <button
@@ -2015,7 +2015,7 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
                         setCustomVideoUrl(e.target.value);
                         if (videoError) setVideoError(null);
                       }}
-                      placeholder="https://storage.googleapis.com/... or https://drive.google.com/file/d/.../view"
+                      placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/... or Google Drive URL"
                       className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs outline-none focus:border-[#00A191] font-mono"
                     />
                   </div>
@@ -2034,6 +2034,16 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
                   <div className="flex items-center gap-2">
                     {(() => {
                       const parsed = parseVideoSource(customVideoUrl);
+                      if (parsed?.sourceType === 'youtube') {
+                        return (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-red-500/20 text-red-300 border border-red-500/40">
+                            <svg className="w-3 h-3 text-red-500 fill-current" viewBox="0 0 24 24">
+                              <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                            </svg>
+                            <span>Detected: YouTube Video ({parsed.videoId})</span>
+                          </span>
+                        );
+                      }
                       if (parsed?.sourceType === 'google-cloud-storage') {
                         return (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
@@ -2069,7 +2079,7 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
                     type="text"
                     value={customVideoTitle}
                     onChange={(e) => setCustomVideoTitle(e.target.value)}
-                    placeholder="Video Display Label / Filename (optional, e.g. Spot-The-Phish-1.mp4)"
+                    placeholder="Video Display Label (optional, e.g. Phishing Awareness Demo)"
                     className="flex-1 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs outline-none focus:border-slate-600"
                   />
                 </div>
@@ -2087,7 +2097,7 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
                     className="inline-flex items-center gap-1 text-[#00A191] hover:underline font-bold cursor-pointer"
                   >
                     <HelpCircle className="w-3 h-3" />
-                    <span>{showCloudGuide ? 'Hide Instructions' : 'How to get public URL'}</span>
+                    <span>{showCloudGuide ? 'Hide Instructions' : 'How to add YouTube / Drive videos'}</span>
                   </button>
                 </div>
 
@@ -2096,27 +2106,40 @@ const QuestionEditorModal: React.FC<QuestionEditorModalProps> = ({ question, onS
                   <div className="p-3.5 rounded-xl bg-slate-900 border border-[#00A191]/30 text-xs text-slate-300 space-y-2.5">
                     <div className="font-bold text-white flex items-center gap-1.5">
                       <Cloud className="w-4 h-4 text-[#00A191]" />
-                      <span>How to host videos externally:</span>
+                      <span>Supported video platforms:</span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px]">
                       <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                        <span className="font-bold text-emerald-400 block">Google Cloud Storage (GCS)</span>
+                        <span className="font-bold text-red-400 flex items-center gap-1">
+                          <svg className="w-3 h-3 text-red-500 fill-current" viewBox="0 0 24 24">
+                            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                          </svg>
+                          <span>YouTube Videos</span>
+                        </span>
                         <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
-                          <li>Upload your .mp4 video into your GCS Bucket.</li>
-                          <li>Click the file's Permissions / Edit access.</li>
-                          <li>Add <code className="text-white bg-slate-800 px-1 rounded">allUsers</code> with Role: <code className="text-white bg-slate-800 px-1 rounded">Storage Object Viewer</code>.</li>
-                          <li>Copy Public URL (<code className="text-slate-300">https://storage.googleapis.com/...</code>) and paste above!</li>
+                          <li>Copy any YouTube URL (<code className="text-white bg-slate-800 px-1 rounded">youtube.com/watch?v=...</code>, <code className="text-white bg-slate-800 px-1 rounded">youtu.be/...</code>, or Shorts).</li>
+                          <li>Paste it into the link field above.</li>
+                          <li>Click <strong>Apply Link</strong> to preview immediately.</li>
                         </ol>
                       </div>
 
                       <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-                        <span className="font-bold text-sky-400 block">Google Drive Storage</span>
+                        <span className="font-bold text-sky-400 block">Google Drive</span>
                         <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
                           <li>Upload your .mp4 video to Google Drive.</li>
                           <li>Right-click the video file and select <strong>Share</strong>.</li>
-                          <li>Change General access to <strong>"Anyone with the link"</strong> (Viewer).</li>
+                          <li>Change access to <strong>"Anyone with the link"</strong>.</li>
                           <li>Click <strong>Copy link</strong> and paste above!</li>
+                        </ol>
+                      </div>
+
+                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                        <span className="font-bold text-emerald-400 block">Google Cloud (GCS)</span>
+                        <ol className="list-decimal list-inside space-y-0.5 text-slate-400">
+                          <li>Upload your .mp4 video into your GCS Bucket.</li>
+                          <li>Add <code className="text-white bg-slate-800 px-1 rounded">allUsers</code> with Role: <code className="text-white bg-slate-800 px-1 rounded">Storage Object Viewer</code>.</li>
+                          <li>Copy Public URL (<code className="text-slate-300">https://storage.googleapis.com/...</code>).</li>
                         </ol>
                       </div>
                     </div>

@@ -146,6 +146,7 @@ export async function processUploadedMp4Video(
 }
 
 export type VideoSourceType =
+  | 'youtube'
   | 'google-drive'
   | 'google-cloud-storage'
   | 'direct-url'
@@ -158,16 +159,115 @@ export interface ParsedVideoSource {
   embedUrl?: string | null;
   displayBadge: string;
   inferredFileName: string;
+  videoId?: string;
 }
 
 /**
- * Parses any video URL to identify its origin (Google Cloud Storage, Google Drive,
+ * Extracts a YouTube Video ID and optional start time in seconds from various YouTube URL formats
+ * (standard watch, youtu.be short links, embed URLs, Shorts, live streams, and music links).
+ */
+export function extractYouTubeVideoDetails(url?: string | null): { videoId: string; startTime?: number } | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+
+  // Check if domain is youtube or youtu.be
+  if (
+    !trimmed.includes('youtube.com') &&
+    !trimmed.includes('youtu.be') &&
+    !trimmed.includes('youtube-nocookie.com')
+  ) {
+    return null;
+  }
+
+  let videoId: string | null = null;
+
+  // 1. youtu.be/VIDEO_ID
+  const shortMatch = trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/i);
+  if (shortMatch) {
+    videoId = shortMatch[1];
+  }
+
+  // 2. youtube.com/watch?v=VIDEO_ID
+  if (!videoId) {
+    const watchMatch = trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/i);
+    if (watchMatch) {
+      videoId = watchMatch[1];
+    }
+  }
+
+  // 3. youtube.com/embed/VIDEO_ID or youtube-nocookie.com/embed/VIDEO_ID
+  if (!videoId) {
+    const embedMatch = trimmed.match(/\/embed\/([a-zA-Z0-9_-]{11})/i);
+    if (embedMatch) {
+      videoId = embedMatch[1];
+    }
+  }
+
+  // 4. youtube.com/shorts/VIDEO_ID
+  if (!videoId) {
+    const shortsMatch = trimmed.match(/\/shorts\/([a-zA-Z0-9_-]{11})/i);
+    if (shortsMatch) {
+      videoId = shortsMatch[1];
+    }
+  }
+
+  // 5. youtube.com/live/VIDEO_ID
+  if (!videoId) {
+    const liveMatch = trimmed.match(/\/live\/([a-zA-Z0-9_-]{11})/i);
+    if (liveMatch) {
+      videoId = liveMatch[1];
+    }
+  }
+
+  if (!videoId) return null;
+
+  // Extract start time if present (e.g. ?t=90, ?t=1m30s, ?start=90)
+  let startTime: number | undefined;
+  const timeMatch = trimmed.match(/[?&](?:t|start)=([0-9mhjs]+)/i);
+  if (timeMatch) {
+    const rawTime = timeMatch[1].toLowerCase();
+    if (/^\d+$/.test(rawTime)) {
+      startTime = parseInt(rawTime, 10);
+    } else {
+      let totalSeconds = 0;
+      const hours = rawTime.match(/(\d+)h/);
+      const minutes = rawTime.match(/(\d+)m/);
+      const seconds = rawTime.match(/(\d+)s/);
+      if (hours) totalSeconds += parseInt(hours[1], 10) * 3600;
+      if (minutes) totalSeconds += parseInt(minutes[1], 10) * 60;
+      if (seconds) totalSeconds += parseInt(seconds[1], 10);
+      if (totalSeconds > 0) startTime = totalSeconds;
+    }
+  }
+
+  return { videoId, startTime };
+}
+
+/**
+ * Parses any video URL to identify its origin (YouTube, Google Cloud Storage, Google Drive,
  * generic HTTPS streaming URL, or Firestore chunked media), providing embed and stream endpoints.
  */
 export function parseVideoSource(rawUrl?: string | null): ParsedVideoSource | null {
   if (!rawUrl) return null;
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;
+
+  // YouTube Video (e.g. https://www.youtube.com/watch?v=..., https://youtu.be/..., https://youtube.com/shorts/...)
+  const ytDetails = extractYouTubeVideoDetails(trimmed);
+  if (ytDetails) {
+    const { videoId, startTime } = ytDetails;
+    const timeParam = startTime ? `&start=${startTime}` : '';
+    const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1${timeParam}`;
+    return {
+      sourceType: 'youtube',
+      rawUrl: trimmed,
+      streamUrl: embedUrl,
+      embedUrl,
+      displayBadge: 'YouTube',
+      inferredFileName: `YouTube (${videoId})`,
+      videoId,
+    };
+  }
 
   // Google Drive share link (e.g. https://drive.google.com/file/d/FILE_ID/view?usp=sharing)
   if (trimmed.includes('drive.google.com')) {
@@ -236,7 +336,7 @@ export function parseVideoSource(rawUrl?: string | null): ParsedVideoSource | nu
 }
 
 /**
- * Resolves a stored `videoUrl` (either Google Cloud Storage, Google Drive,
+ * Resolves a stored `videoUrl` (YouTube, Google Cloud Storage, Google Drive,
  * `firestore-media://{mediaId}`, `data:video/mp4;base64,...`, or `https://...`)
  * into a playable URL.
  */
@@ -244,6 +344,9 @@ export async function resolvePlayableVideoUrl(videoUrl?: string | null): Promise
   if (!videoUrl) return null;
 
   const parsed = parseVideoSource(videoUrl);
+  if (parsed?.sourceType === 'youtube') {
+    return parsed.embedUrl || parsed.streamUrl;
+  }
   if (parsed?.sourceType === 'google-drive') {
     return parsed.embedUrl || parsed.streamUrl;
   }

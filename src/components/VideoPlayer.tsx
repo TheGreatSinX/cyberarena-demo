@@ -41,8 +41,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const parsed = parseVideoSource(videoUrl);
     setParsedSource(parsed);
 
-    // If it's a Google Drive share link, we embed the official Google Drive preview player directly
-    if (parsed?.sourceType === 'google-drive' && parsed.embedUrl) {
+    // If it's a YouTube video or Google Drive share link, we embed the preview player directly
+    if ((parsed?.sourceType === 'youtube' || parsed?.sourceType === 'google-drive') && parsed.embedUrl) {
       setPlayableSrc(parsed.embedUrl);
       setLoading(false);
       setError(null);
@@ -72,7 +72,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   if (!videoUrl) return null;
 
+  const isYouTubeEmbed = parsedSource?.sourceType === 'youtube';
   const isGoogleDriveEmbed = parsedSource?.sourceType === 'google-drive' && playableSrc?.includes('drive.google.com');
+  const isIframeEmbed = isYouTubeEmbed || isGoogleDriveEmbed;
 
   return (
     <div className={`w-full flex flex-col items-center ${className}`}>
@@ -89,11 +91,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       ) : playableSrc ? (
         <div className="w-full flex flex-col items-center gap-1.5">
           <div className="relative w-full flex justify-center rounded-2xl overflow-hidden bg-slate-950/90 border border-slate-700/80 p-1.5 shadow-lg">
-            {isGoogleDriveEmbed ? (
-              <div className="w-full aspect-video min-h-[180px] max-h-72 rounded-xl overflow-hidden bg-black flex items-center justify-center">
+            {isIframeEmbed ? (
+              <div className="w-full aspect-video min-h-[190px] max-h-80 rounded-xl overflow-hidden bg-black flex items-center justify-center">
                 <iframe
                   src={playableSrc}
-                  title={videoFileName || 'Google Drive Video'}
+                  title={videoFileName || (isYouTubeEmbed ? 'YouTube Video Player' : 'Google Drive Video')}
                   className="w-full h-full border-0 rounded-xl"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
                   allowFullScreen
@@ -119,8 +121,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {/* Badges for Cloud Provider and Filename */}
           <div className="flex flex-wrap items-center justify-center gap-2 mt-0.5">
             {parsedSource && (
-              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                parsedSource.sourceType === 'google-cloud-storage'
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                parsedSource.sourceType === 'youtube'
+                  ? 'bg-red-500/15 border-red-500/40 text-red-300'
+                  : parsedSource.sourceType === 'google-cloud-storage'
                   ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
                   : parsedSource.sourceType === 'google-drive'
                   ? 'bg-sky-500/15 border-sky-500/40 text-sky-300'
@@ -128,7 +132,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300'
                   : 'bg-slate-800 border-slate-700 text-slate-300'
               }`}>
-                {parsedSource.sourceType === 'google-cloud-storage' ? (
+                {parsedSource.sourceType === 'youtube' ? (
+                  <svg className="w-3.5 h-3.5 text-red-500 fill-current" viewBox="0 0 24 24">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                  </svg>
+                ) : parsedSource.sourceType === 'google-cloud-storage' ? (
                   <Cloud className="w-3 h-3 text-emerald-400" />
                 ) : parsedSource.sourceType === 'google-drive' ? (
                   <HardDrive className="w-3 h-3 text-sky-400" />
